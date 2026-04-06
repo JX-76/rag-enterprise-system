@@ -5,9 +5,10 @@ import os
 import importlib.util
 
 # 直接导入document_parser，避免级联导入
+script_dir = os.path.dirname(os.path.abspath(__file__))
 spec = importlib.util.spec_from_file_location(
     "document_parser",
-    os.path.join(os.path.dirname(__file__), "src/ingestion/document_parser.py")
+    os.path.join(script_dir, "src/ingestion/document_parser.py")
 )
 module = importlib.util.module_from_spec(spec)
 sys.modules["document_parser"] = module
