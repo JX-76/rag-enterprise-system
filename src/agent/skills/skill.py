@@ -273,7 +273,7 @@ class CompositeSkill(Skill):
         results = []
         accumulated_data = {}
         
-        for skill_name, param_mapping in self.sub_skills:
+        for step_idx, (skill_name, param_mapping) in enumerate(self.sub_skills):
             skill = self.skill_library.get_skill(skill_name)
             if not skill:
                 return SkillResult.error_result(f"找不到子技能: {skill_name}")
@@ -283,8 +283,16 @@ class CompositeSkill(Skill):
             for sub_param, parent_param in param_mapping.items():
                 if parent_param.startswith("$"):
                     # 引用之前步骤的结果
-                    ref_key = parent_param[1:]
-                    sub_params[sub_param] = accumulated_data.get(ref_key)
+                    ref_parts = parent_param[1:].split(".")
+                    data = accumulated_data.get(ref_parts[0])
+                    # 处理嵌套引用
+                    for part in ref_parts[1:]:
+                        if isinstance(data, dict):
+                            data = data.get(part)
+                        else:
+                            data = None
+                            break
+                    sub_params[sub_param] = data
                 else:
                     sub_params[sub_param] = params.get(parent_param)
             
@@ -297,8 +305,8 @@ class CompositeSkill(Skill):
                     data={"partial_results": results}
                 )
             
-            # 累积数据供后续步骤使用
-            accumulated_data[skill_name] = result.data
+            # 累积数据供后续步骤使用（使用步骤索引作为key）
+            accumulated_data[f"step_{step_idx}"] = result.data
         
         return SkillResult.success_result({
             "results": accumulated_data,

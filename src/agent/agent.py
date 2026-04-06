@@ -4,7 +4,7 @@ RAG Agent 主类
 整合四层记忆 + 技能库 + 对话管理
 """
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Any, AsyncIterator
+from typing import Dict, List, Optional, Any
 import asyncio
 import json
 
@@ -101,7 +101,7 @@ class RAGAgent:
         """
         # 1. 更新对话状态
         self.dialogue_manager.add_message(
-            session_id, "user", message
+            session_id, "user", message, user_id=user_id
         )
         
         # 2. 更新超短期记忆

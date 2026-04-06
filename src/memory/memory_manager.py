@@ -12,7 +12,6 @@ import json
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Any
 from collections import defaultdict
-import numpy as np
 
 from .memory_types import (
     Memory, MemoryLayer,
@@ -314,9 +313,11 @@ class MemoryManager:
         """
         results = defaultdict(list)
         
-        # 1. 超短期记忆（当前会话）
-        ultra_short = self.get_session_context(user_id, session_id)
-        if ultra_short:
+        # 1. 超短期记忆（当前会话）- 返回UltraShortTermMemory对象
+        key = f"{user_id}:{session_id}"
+        if key in self.ultra_short_memory:
+            ultra_short = self.ultra_short_memory[key]
+            ultra_short.access_count += 1
             results[MemoryLayer.ULTRA_SHORT] = [ultra_short]
         
         # 2. 短期记忆（近7天）
@@ -351,8 +352,12 @@ class MemoryManager:
         
         # 1. 超短期（当前会话）- 最高优先级
         if MemoryLayer.ULTRA_SHORT in memories:
-            context_parts.append("=== 当前会话 ===")
-            context_parts.append(memories[MemoryLayer.ULTRA_SHORT][0])
+            ultra_short = memories[MemoryLayer.ULTRA_SHORT][0]
+            if isinstance(ultra_short, UltraShortTermMemory):
+                context = ultra_short.get_context()
+                if context:
+                    context_parts.append("=== 当前会话 ===")
+                    context_parts.append(context)
         
         # 2. 长期（用户画像）
         if MemoryLayer.LONG in memories:
@@ -400,7 +405,7 @@ class MemoryManager:
         """
         # 简单线性更新
         memory.importance_score += feedback * 0.1
-        memory.importance_score = np.clip(memory.importance_score, 0, 2)
+        memory.importance_score = max(0, min(memory.importance_score, 2))
         memory.updated_at = datetime.now()
     
     def apply_forgetting(self):

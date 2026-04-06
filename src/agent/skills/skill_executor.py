@@ -3,6 +3,7 @@
 
 负责任务规划、技能调用、结果校验、错误恢复
 """
+import asyncio
 import time
 import json
 from typing import Dict, List, Optional, Any, Callable
@@ -98,7 +99,7 @@ class SkillExecutor:
             except Exception as e:
                 last_error = str(e)
                 if attempt < self.max_retries - 1:
-                    time.sleep(0.5 * (attempt + 1))  # 指数退避
+                    await asyncio.sleep(0.5 * (attempt + 1))  # 指数退避
                 continue
         
         # 全部失败
