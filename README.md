@@ -6,27 +6,19 @@
 
 ## 🛠️ 技术栈
 
-| 层级 | 技术/框架 | 说明 |
-|------|----------|------|
-| **API框架** | FastAPI + Uvicorn + Starlette | 高性能异步API服务 |
-| **LLM框架** | LangChain + LlamaIndex + Haystack | 主流LLM应用框架 |
-| **向量数据库** | ChromaDB + Milvus + Qdrant + Pinecone | 多向量库支持 |
-| **Embedding** | Sentence-Transformers + BGE + OpenAI | 多模型支持 |
-| **LLM提供商** | OpenAI + Anthropic + Cohere + Google + 通义千问 | 多厂商支持 |
-| **文档处理** | PyPDF + PyMuPDF + python-docx + unstructured | 多格式解析 |
-| **检索** | Whoosh + BM25 + Elasticsearch + OpenSearch | 混合检索策略 |
-| **数据库** | PostgreSQL + pgvector + MongoDB + MinIO | 数据存储 |
-| **消息队列** | Celery + Redis + Kafka + RabbitMQ | 异步任务处理 |
-| **缓存** | Redis + Memcached + DiskCache | 多级缓存 |
-| **工作流** | Prefect + Airflow + Dagster | 数据管道编排 |
-| **监控** | Prometheus + Grafana + OpenTelemetry + Sentry | 可观测性 |
-| **服务网格** | Istio + Envoy | 微服务治理 |
-| **部署** | Docker + Kubernetes + Helm + Terraform | 云原生部署 |
-| **API网关** | Kong + Nginx + Traefik | 流量管理 |
-| **配置** | Pydantic Settings + python-dotenv | 配置管理 |
-| **测试** | pytest + Locust + Factory Boy | 测试与压测 |
-| **安全** | JWT + OAuth2 + Passlib | 认证授权 |
-| **压测** | Locust | 性能测试 |
+> 精选一套**实用、主流、面试友好**的方案，详见 [docs/tech-stack.md](docs/tech-stack.md)
+
+| 层级 | 选型 | 备选 |
+|------|------|------|
+| **API框架** | FastAPI | - |
+| **LLM框架** | LangChain | - |
+| **向量数据库** | ChromaDB (开发) / Milvus (生产) | pgvector |
+| **Embedding** | BGE (中文优化) | OpenAI |
+| **LLM** | OpenAI / 通义千问 | Claude |
+| **数据库** | PostgreSQL + Redis | - |
+| **任务队列** | Celery | - |
+| **监控** | Prometheus + Grafana | - |
+| **部署** | Docker Compose / Kubernetes | - |
 
 ---
 
