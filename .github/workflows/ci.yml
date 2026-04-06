@@ -26,24 +26,20 @@ jobs:
 
     - name: Run core module tests
       run: |
-        cd tests/unit
-        python -m pytest test_circuit_breaker.py -v || echo "Circuit breaker test skipped"
-        python -m pytest test_rate_limit.py -v || echo "Rate limit test skipped"
-        python -m pytest test_parent_child_chunker.py -v || echo "Parent child chunker test skipped"
-      env:
-        PYTHONPATH: ${{ github.workspace }}/src
+        cd ${{ github.workspace }}
+        python -m pytest tests/unit/test_circuit_breaker.py -v || echo "Circuit breaker test skipped"
+        python -m pytest tests/unit/test_rate_limit.py -v || echo "Rate limit test skipped"
+        python -m pytest tests/unit/test_parent_child_chunker.py -v || echo "Parent child chunker test skipped"
 
     - name: Test document parser (no ML deps)
       run: |
+        cd ${{ github.workspace }}
         python test_document_parser.py
-      env:
-        PYTHONPATH: ${{ github.workspace }}/src
 
     - name: Test quickstart
       run: |
+        cd ${{ github.workspace }}
         python quickstart.py
-      env:
-        PYTHONPATH: ${{ github.workspace }}/src
 
   check-structure:
     runs-on: ubuntu-latest
