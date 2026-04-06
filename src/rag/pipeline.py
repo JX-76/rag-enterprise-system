@@ -22,7 +22,12 @@ from ingestion.parent_child_chunker import ParentChildChunker
 from services.embedding_service import EmbeddingService
 from services.llm_service import LLMService, QwenLLMService
 from retrieval.hybrid_search import HybridRetriever
+from retrieval.simple_vector_store import SimpleVectorStore
 from rag.query_rewriter import QueryRewriter
+
+# Memory四层架构
+from memory import MemoryManager, MemoryLayer
+from memory.memory_types import UltraShortTermMemory
 
 
 logger = logging.getLogger(__name__)
@@ -97,10 +102,13 @@ class DefaultRAGPipeline:
         self._parser: Optional[DocumentParser] = None
         self._chunker: Optional[ParentChildChunker] = None
         self._embedder: Optional[EmbeddingService] = None
-        self._vector_store = None  # ChromaDB实例
+        self._vector_store: Optional[SimpleVectorStore] = None
         self._retriever: Optional[HybridRetriever] = None
         self._query_rewriter: Optional[QueryRewriter] = None
         self._llm: Optional[LLMService] = None
+        
+        # Memory管理器
+        self._memory_manager: Optional[MemoryManager] = None
         
         logger.info("DefaultRAGPipeline 创建完成，等待初始化...")
     
@@ -126,10 +134,10 @@ class DefaultRAGPipeline:
             model_name=self.config.embedding_model
         )
         
-        # 4. 向量存储（ChromaDB）
+        # 4. 向量存储（简易版）
         os.makedirs(self.config.vector_store_path, exist_ok=True)
-        # TODO: 初始化ChromaDB
-        # self._vector_store = ChromaDB(path=self.config.vector_store_path)
+        persist_path = os.path.join(self.config.vector_store_path, "vectors.pkl")
+        self._vector_store = SimpleVectorStore(persist_path=persist_path)
         
         # 5. 混合检索器
         self._retriever = HybridRetriever(
@@ -154,6 +162,9 @@ class DefaultRAGPipeline:
                 base_url=self.config.llm_base_url,
                 model=self.config.llm_model
             )
+        
+        # 8. Memory管理器
+        self._memory_manager = MemoryManager()
         
         self._initialized = True
         logger.info("RAG流水线初始化完成")
@@ -199,8 +210,15 @@ class DefaultRAGPipeline:
             embeddings = self._embedder.encode(chunk_texts)
             
             # 4. 存入向量库
-            # TODO: 实现向量库存储
-            # self._vector_store.add_documents(chunks, embeddings)
+            metadatas = [
+                {
+                    "source": file_path,
+                    "chunk_index": i,
+                    "total_chunks": len(chunks)
+                }
+                for i in range(len(chunks))
+            ]
+            self._vector_store.add_documents(chunk_texts, embeddings, metadatas)
             
             logger.info(f"文档处理完成: {file_path}, 共{len(chunks)}个分块")
             
@@ -287,26 +305,54 @@ class DefaultRAGPipeline:
             # 2. 向量化
             query_embedding = self._embedder.encode([query])[0]
             
-            # 3. 混合检索
-            # TODO: 实际检索逻辑
-            # retrieved_docs = self._retriever.search(
-            #     query=query,
-            #     query_embedding=query_embedding,
-            #     top_k=self.config.top_k
-            # )
-            retrieved_docs = []  # 占位
+            # 3. 向量检索
+            search_results = self._vector_store.search(
+                query_embedding=query_embedding,
+                top_k=self.config.top_k
+            )
             
-            # 4. 精排（可选）
-            # if len(retrieved_docs) > self.config.rerank_top_k:
-            #     retrieved_docs = self._rerank(query, retrieved_docs)
+            # 转换为统一格式
+            retrieved_docs = [
+                {
+                    "id": doc.id,
+                    "text": doc.text,
+                    "metadata": doc.metadata,
+                    "score": score
+                }
+                for doc, score in search_results
+            ]
+            
+            # 4. 精排（取前rerank_top_k个）
+            if len(retrieved_docs) > self.config.rerank_top_k:
+                retrieved_docs = retrieved_docs[:self.config.rerank_top_k]
             
             # 5. LLM生成答案
-            # TODO: 实际生成逻辑
-            # answer = self._llm.generate(
-            #     query=query,
-            #     context=retrieved_docs
-            # )
-            answer = f"[模拟回答] 基于检索到的{len(retrieved_docs)}个文档片段..."
+            if retrieved_docs:
+                # 构建上下文
+                context_parts = []
+                for i, doc in enumerate(retrieved_docs, 1):
+                    context_parts.append(f"[{i}] {doc['text']}")
+                context = "\n\n".join(context_parts)
+                
+                # 构建提示
+                prompt = f"""根据以下参考资料回答问题：
+
+参考资料：
+{context}
+
+问题：{query}
+
+请基于参考资料回答，并在回答中引用相关片段的编号（如[1]、[2]）。如果参考资料中没有相关信息，请明确说明。"""
+                
+                # 调用LLM生成（模拟，实际使用时应接入真实LLM）
+                try:
+                    answer = self._llm.generate(prompt, max_tokens=512)
+                except Exception as llm_error:
+                    # 如果LLM调用失败，返回基于检索结果的简单答案
+                    answer = f"[基于检索结果]\n\n我找到了{len(retrieved_docs)}个相关文档片段。\n\n" + \
+                             "\n".join([f"[{i+1}] {doc['text'][:150]}..." for i, doc in enumerate(retrieved_docs[:3])])
+            else:
+                answer = "未检索到相关文档，无法回答该问题。"
             
             # 6. 生成引用
             citations = []
@@ -355,25 +401,158 @@ class DefaultRAGPipeline:
         self,
         query: str,
         session_id: Optional[str] = None,
+        user_id: str = "default_user",
         use_memory: bool = True
     ) -> QueryResult:
         """
         对话式问答（支持多轮上下文）
         
+        接入Memory四层架构：
+        - 超短期：当前会话上下文
+        - 短期：近7天历史对话
+        - 长期：用户画像与偏好
+        
         Args:
             query: 用户问题
             session_id: 会话ID（用于上下文追踪）
+            user_id: 用户ID
             use_memory: 是否使用历史上下文
         
         Returns:
             QueryResult: 查询结果
         """
-        # TODO: 接入Memory四层架构
-        # 1. 检索历史相关对话
-        # 2. 融入当前查询上下文
-        # 3. 生成带上下文的回答
+        self._ensure_initialized()
         
-        return self.query(query)
+        # 生成会话ID
+        if session_id is None:
+            import uuid
+            session_id = str(uuid.uuid4())[:8]
+        
+        try:
+            # 1. 检索历史上下文（Memory四层）
+            history_context = ""
+            if use_memory and self._memory_manager:
+                # 获取当前会话的超短期记忆
+                ultra_short_memories = self._memory_manager.get_memories(
+                    user_id=user_id,
+                    session_id=session_id,
+                    layer=MemoryLayer.ULTRA_SHORT,
+                    limit=5
+                )
+                
+                # 获取短期记忆（近7天）
+                short_memories = self._memory_manager.get_memories(
+                    user_id=user_id,
+                    layer=MemoryLayer.SHORT,
+                    limit=3
+                )
+                
+                # 构建历史上下文
+                history_parts = []
+                
+                # 添加超短期记忆（当前会话）
+                if ultra_short_memories:
+                    history_parts.append("当前会话历史：")
+                    for mem in reversed(ultra_short_memories):  # 按时间正序
+                        history_parts.append(f"用户: {mem.content}")
+                
+                # 添加短期记忆（近7天）
+                if short_memories:
+                    history_parts.append("\n近期相关对话：")
+                    for mem in short_memories[:2]:  # 只取最相关的2条
+                        history_parts.append(f"- {mem.content[:100]}...")
+                
+                history_context = "\n".join(history_parts)
+            
+            # 2. 向量检索当前查询
+            query_embedding = self._embedder.encode([query])[0]
+            search_results = self._vector_store.search(
+                query_embedding=query_embedding,
+                top_k=self.config.top_k
+            )
+            
+            retrieved_docs = [
+                {
+                    "id": doc.id,
+                    "text": doc.text,
+                    "metadata": doc.metadata,
+                    "score": score
+                }
+                for doc, score in search_results
+            ]
+            
+            # 3. 构建带上下文的提示
+            context_parts = []
+            
+            # 添加历史对话
+            if history_context:
+                context_parts.append(f"【对话上下文】\n{history_context}\n")
+            
+            # 添加检索到的文档
+            if retrieved_docs:
+                context_parts.append("【参考资料】")
+                for i, doc in enumerate(retrieved_docs, 1):
+                    context_parts.append(f"[{i}] {doc['text']}")
+            
+            context = "\n\n".join(context_parts)
+            
+            # 4. 生成提示
+            prompt = f"""你是一个智能助手，请根据对话上下文和参考资料回答用户问题。
+
+{context}
+
+【用户问题】
+{query}
+
+请基于以上信息回答，并注意：
+1. 如果有对话上下文，请保持回答的连贯性
+2. 引用参考资料时使用[1]、[2]等标注
+3. 如果信息不足，请明确说明
+"""
+            
+            # 5. 调用LLM生成
+            answer = self._llm.generate(prompt)
+            
+            # 6. 保存到记忆（超短期）
+            if self._memory_manager:
+                # 保存用户查询
+                self._memory_manager.add_ultra_short_memory(
+                    user_id=user_id,
+                    session_id=session_id,
+                    content=query,
+                    metadata={"type": "user_query"}
+                )
+                # 保存助手回答
+                self._memory_manager.add_ultra_short_memory(
+                    user_id=user_id,
+                    session_id=session_id,
+                    content=answer,
+                    metadata={"type": "assistant_response"}
+                )
+            
+            # 7. 提取引用
+            citations = self._extract_citations(retrieved_docs)
+            
+            return QueryResult(
+                query=query,
+                answer=answer,
+                citations=citations,
+                retrieved_docs=retrieved_docs,
+                metadata={
+                    "session_id": session_id,
+                    "retrieved_count": len(retrieved_docs),
+                    "use_memory": use_memory,
+                    "has_history": bool(history_context)
+                }
+            )
+            
+        except Exception as e:
+            logger.error(f"对话查询失败: {query}, 错误: {str(e)}")
+            return QueryResult(
+                query=query,
+                answer=f"对话出错: {str(e)}",
+                error=str(e)
+            )
     
     def get_stats(self) -> Dict[str, Any]:
         """获取流水线统计信息"""
