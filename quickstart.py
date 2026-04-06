@@ -267,9 +267,9 @@ async def test_evaluation_metrics():
     
     # 模拟检索结果 (doc_id, score)
     retrieved_results = [
-        [("doc1", 0.9), ("doc2", 0.8), ("doc3", 0.7)],  # query1
-        [("doc2", 0.9), ("doc4", 0.8)],                   # query2
-        [("doc5", 0.9)],                                  # query3
+        [{"id": "doc1"}, {"id": "doc2"}, {"id": "doc3"}],  # query1
+        [{"id": "doc2"}, {"id": "doc4"}],                   # query2
+        [{"id": "doc5"}],                                  # query3
     ]
     
     # Ground truth
@@ -291,13 +291,13 @@ async def test_evaluation_metrics():
         return all_passed
     
     # 测试2: Recall@1
-    # query1: doc1在位置0 → 命中
-    # query2: doc2在位置0 → 命中
-    # query3: doc5在位置0 → 命中
-    # 所以 Recall@1 = 3/3 = 1.0
-    passed = metrics.recall_at_k[1] == 1.0
+    # query1: doc1在位置0命中，但还有doc4未命中 → Recall@1 = 1/2 = 0.5
+    # query2: doc2在位置0命中，且只有doc2 → Recall@1 = 1/1 = 1.0
+    # query3: doc5在位置0命中，但还有doc6未命中 → Recall@1 = 1/2 = 0.5
+    # 平均 Recall@1 = (0.5 + 1.0 + 0.5) / 3 = 0.667
+    passed = abs(metrics.recall_at_k[1] - 0.667) < 0.01
     all_passed &= print_result("Recall@1 计算正确", passed,
-                               f"实际: {metrics.recall_at_k[1]:.3f}, 期望: 1.0")
+                               f"实际: {metrics.recall_at_k[1]:.3f}, 期望: 0.667")
     
     # 测试3: MRR
     # query1: doc1在rank1 → 1/1 = 1.0
