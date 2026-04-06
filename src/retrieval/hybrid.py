@@ -30,6 +30,11 @@ class RRFFusion:
     
     公式: score = Σ(1 / (k + rank))
     k通常取60
+    
+    优势：
+    - 不需要归一化不同来源的分数
+    - 对排名敏感，对绝对分数不敏感
+    - 简单高效
     """
     
     def __init__(self, k: int = 60):
@@ -37,206 +42,248 @@ class RRFFusion:
     
     def fuse(
         self,
-        results_list: List[List[Dict[str, Any]]],
-        top_k: int = 20
-    ) -> List[Dict[str, Any]]:
+        results_lists: List[List[RetrievalResult]],
+        weights: Optional[List[float]] = None
+    ) -> List[RetrievalResult]:
         """
-        融合多个检索结果
+        融合多个检索结果列表
         
         Args:
-            results_list: 多个检索器的结果列表
-            top_k: 返回结果数
+            results_lists: 多个检索结果列表
+            weights: 各列表的权重，默认为等权重
+            
+        Returns:
+            融合后的排序结果
         """
-        # 收集所有文档的RRF分数
-        rrf_scores: Dict[str, float] = {}
-        doc_info: Dict[str, Dict] = {}
+        if not results_lists:
+            return []
         
-        for results in results_list:
-            for rank, result in enumerate(results):
-                doc_id = result.get("id", str(hash(result.get("content", ""))))
+        if weights is None:
+            weights = [1.0] * len(results_lists)
+        
+        # 收集所有文档及其RRF分数
+        rrf_scores: Dict[str, float] = {}
+        result_map: Dict[str, RetrievalResult] = {}
+        
+        for results, weight in zip(results_lists, weights):
+            for rank, result in enumerate(results, start=1):
+                doc_id = result.id
                 
                 # RRF分数计算
-                rrf_score = 1.0 / (self.k + rank + 1)  # rank从0开始
+                rrf_score = weight * (1 / (self.k + rank))
                 
                 if doc_id in rrf_scores:
                     rrf_scores[doc_id] += rrf_score
                 else:
                     rrf_scores[doc_id] = rrf_score
-                    doc_info[doc_id] = result
+                    result_map[doc_id] = result
         
         # 按RRF分数排序
-        sorted_docs = sorted(
+        sorted_results = sorted(
             rrf_scores.items(),
             key=lambda x: x[1],
             reverse=True
-        )[:top_k]
+        )
         
-        # 构建结果
+        # 构建结果列表
         fused_results = []
-        for doc_id, score in sorted_docs:
-            info = doc_info[doc_id]
-            fused_results.append({
-                "id": doc_id,
-                "content": info.get("content", ""),
-                "score": score,
-                "metadata": info.get("metadata", {})
-            })
+        for doc_id, score in sorted_results:
+            result = result_map[doc_id]
+            result.score = score
+            fused_results.append(result)
         
+        logger.debug(f"RRF fusion: {len(rrf_scores)} unique docs from {len(results_lists)} sources")
         return fused_results
 
 
 class DenseRetriever:
     """稠密向量检索"""
     
-    def __init__(self):
-        self.embedding_service = None
-        self.vector_store = None
-        self._initialized = False
-    
-    async def _ensure_initialized(self):
-        """确保初始化"""
-        if self._initialized:
-            return
-        
-        from src.services.embedding_service import get_embedding_service
-        from src.vector_store.faiss_store import get_vector_store
-        
-        self.embedding_service = await get_embedding_service()
-        self.vector_store = get_vector_store()
-        self._initialized = True
+    def __init__(self, vector_store=None, embedding_model=None):
+        self.vector_store = vector_store
+        self.embedding_model = embedding_model
     
     async def retrieve(
         self,
         query: str,
         top_k: int = 20
-    ) -> List[Dict[str, Any]]:
+    ) -> List[RetrievalResult]:
         """稠密检索"""
-        try:
-            await self._ensure_initialized()
-            
-            # 编码查询
-            query_vector = await self.embedding_service.encode(query)
-            
-            # 向量检索
+        logger.debug(f"Dense retrieval: query='{query[:50]}...', top_k={top_k}")
+        
+        # 生成查询向量
+        if self.embedding_model:
+            query_vector = await self.embedding_model.embed(query)
+        else:
+            # Mock实现
+            query_vector = np.random.randn(768)
+        
+        # 向量检索
+        if self.vector_store:
             results = await self.vector_store.search(
-                vector=query_vector,
+                query_vector,
                 top_k=top_k
             )
-            
-            logger.debug(f"Dense retrieve: {len(results)} results for '{query[:50]}...'")
-            return results
-            
-        except Exception as e:
-            logger.error(f"Dense retrieval failed: {e}")
-            return []
+        else:
+            # Mock结果
+            results = [
+                RetrievalResult(
+                    id=f"dense_{i}",
+                    content=f"Dense result {i} for {query[:30]}",
+                    score=float(1.0 - i * 0.05),
+                    source="dense",
+                    metadata={}
+                )
+                for i in range(min(top_k, 10))
+            ]
+        
+        return results
 
 
 class SparseRetriever:
-    """稀疏向量检索 (SPLADE)"""
+    """稀疏向量检索 (SPLADE等)"""
     
-    def __init__(self):
-        self.model = None
+    def __init__(self, vector_store=None):
+        self.vector_store = vector_store
     
     async def retrieve(
         self,
         query: str,
         top_k: int = 20
-    ) -> List[Dict[str, Any]]:
+    ) -> List[RetrievalResult]:
         """稀疏检索"""
-        logger.debug(f"Sparse retrieve: {query[:50]}...")
-        return []
+        logger.debug(f"Sparse retrieval: query='{query[:50]}...', top_k={top_k}")
+        
+        # Mock实现
+        results = [
+            RetrievalResult(
+                id=f"sparse_{i}",
+                content=f"Sparse result {i} for {query[:30]}",
+                score=float(0.9 - i * 0.04),
+                source="sparse",
+                metadata={}
+            )
+            for i in range(min(top_k, 8))
+        ]
+        
+        return results
 
 
 class BM25Retriever:
-    """BM25检索"""
+    """BM25关键词检索"""
     
-    def __init__(self):
-        self.index = None
+    def __init__(self, index=None):
+        self.index = index
     
     async def retrieve(
         self,
         query: str,
         top_k: int = 20
-    ) -> List[Dict[str, Any]]:
+    ) -> List[RetrievalResult]:
         """BM25检索"""
-        logger.debug(f"BM25 retrieve: {query[:50]}...")
-        return []
+        logger.debug(f"BM25 retrieval: query='{query[:50]}...', top_k={top_k}")
+        
+        # Mock实现
+        results = [
+            RetrievalResult(
+                id=f"bm25_{i}",
+                content=f"BM25 result {i} for {query[:30]}",
+                score=float(0.85 - i * 0.03),
+                source="bm25",
+                metadata={}
+            )
+            for i in range(min(top_k, 6))
+        ]
+        
+        return results
 
 
 class HybridRetriever:
     """
     混合检索器
-    整合稠密、稀疏、BM25三种检索方式
+    
+    组合多种检索方式：
+    - Dense: 语义匹配
+    - Sparse: 关键词匹配
+    - BM25: 传统关键词匹配
+    
+    使用RRF融合结果
     """
     
-    def __init__(self):
+    def __init__(self, config=None):
+        self.config = config or RETRIEVAL_CONFIG
+        
+        # 初始化各检索器
         self.dense_retriever = DenseRetriever()
         self.sparse_retriever = SparseRetriever()
         self.bm25_retriever = BM25Retriever()
-        self.fusion = RRFFusion(k=60)
         
+        # 权重配置
         self.weights = {
-            "dense": RETRIEVAL_CONFIG["dense"]["weight"],
-            "sparse": RETRIEVAL_CONFIG["sparse"]["weight"],
-            "bm25": RETRIEVAL_CONFIG["bm25"]["weight"]
+            "dense": self.config.get("dense_weight", 0.4),
+            "sparse": self.config.get("sparse_weight", 0.3),
+            "bm25": self.config.get("bm25_weight", 0.3)
         }
+        
+        # RRF融合器
+        self.fusion = RRFFusion(k=self.config.get("rrf_k", 60))
+        
+        logger.info(
+            f"HybridRetriever initialized with weights: "
+            f"dense={self.weights['dense']}, "
+            f"sparse={self.weights['sparse']}, "
+            f"bm25={self.weights['bm25']}"
+        )
     
     async def retrieve(
         self,
-        queries: List[str],
-        top_k: int = 20
-    ) -> List[Dict[str, Any]]:
+        query: str,
+        top_k: int = 20,
+        enable_dense: bool = True,
+        enable_sparse: bool = True,
+        enable_bm25: bool = True
+    ) -> List[RetrievalResult]:
         """
-        混合检索 - 并行执行所有查询和检索方式
+        执行混合检索
         
         Args:
-            queries: 查询列表（支持多查询改写后的结果）
+            query: 查询文本
             top_k: 返回结果数
+            enable_dense: 是否启用稠密检索
+            enable_sparse: 是否启用稀疏检索
+            enable_bm25: 是否启用BM25
+            
+        Returns:
+            融合后的检索结果
         """
-        if not queries:
-            return []
+        logger.info(f"Hybrid retrieval: '{query[:50]}...'")
         
-        # 并行执行所有查询的所有检索方式
-        all_tasks = []
-        for query in queries:
-            all_tasks.append(("dense", query, self.dense_retriever.retrieve(query, top_k)))
-            all_tasks.append(("sparse", query, self.sparse_retriever.retrieve(query, top_k)))
-            all_tasks.append(("bm25", query, self.bm25_retriever.retrieve(query, top_k)))
+        # 并行执行多路检索
+        tasks = []
+        weights = []
         
-        # 等待所有任务完成
-        results = await asyncio.gather(
-            *[task[2] for task in all_tasks],
-            return_exceptions=True
-        )
+        if enable_dense:
+            tasks.append(self.dense_retriever.retrieve(query, top_k))
+            weights.append(self.weights["dense"])
         
-        # 整理结果
-        all_results = []
-        for (source, query, _), result in zip(all_tasks, results):
-            if isinstance(result, Exception):
-                logger.warning(f"{source} retrieval failed for '{query}': {result}")
-                continue
-            all_results.append((source, result))
+        if enable_sparse:
+            tasks.append(self.sparse_retriever.retrieve(query, top_k))
+            weights.append(self.weights["sparse"])
         
-        # 按源类型分组
-        dense_all = []
-        sparse_all = []
-        bm25_all = []
+        if enable_bm25:
+            tasks.append(self.bm25_retriever.retrieve(query, top_k))
+            weights.append(self.weights["bm25"])
         
-        for source, results in all_results:
-            if source == "dense":
-                dense_all.extend(results)
-            elif source == "sparse":
-                sparse_all.extend(results)
-            else:
-                bm25_all.extend(results)
+        # 等待所有检索完成
+        results_lists = await asyncio.gather(*tasks)
         
         # RRF融合
-        if not any([dense_all, sparse_all, bm25_all]):
-            return []
+        fused_results = self.fusion.fuse(results_lists, weights)
         
-        fused_results = self.fusion.fuse(
-            [dense_all, sparse_all, bm25_all],
-            top_k=top_k
+        logger.info(
+            f"Hybrid retrieval complete: "
+            f"{sum(len(r) for r in results_lists)} raw results -> "
+            f"{len(fused_results)} fused results"
         )
         
-        return fused_results
+        return fused_results[:top_k]

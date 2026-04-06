@@ -32,6 +32,11 @@ class CircuitBreakerConfig:
     success_threshold: int = 2        # 半开状态成功次数，达到后关闭
 
 
+class CircuitBreakerOpen(Exception):
+    """熔断器打开异常"""
+    pass
+
+
 class CircuitBreaker:
     """
     熔断器实现
@@ -41,6 +46,14 @@ class CircuitBreaker:
     OPEN -> HALF_OPEN: 经过recovery_timeout时间
     HALF_OPEN -> CLOSED: 成功次数达到阈值
     HALF_OPEN -> OPEN: 任何一次失败
+    
+    使用示例：
+        breaker = CircuitBreaker("vector_db", CircuitBreakerConfig())
+        try:
+            result = await breaker.call(database_query, param)
+        except CircuitBreakerOpen:
+            # 熔断时的降级处理
+            return cached_result
     """
     
     def __init__(self, name: str, config: Optional[CircuitBreakerConfig] = None):
@@ -59,29 +72,37 @@ class CircuitBreaker:
         return self._state
     
     async def call(self, func: Callable, *args, **kwargs) -> Any:
-        """执行被保护的函数"""
-        async with self._lock:
-            # 检查状态
-            if self._state == CircuitState.OPEN:
-                # 检查是否可以尝试恢复
-                if self._can_attempt_reset():
-                    self._state = CircuitState.HALF_OPEN
-                    self._half_open_calls = 0
-                    self._success_count = 0
-                    logger.info(f"Circuit breaker '{self.name}' entering HALF_OPEN state")
-                else:
-                    raise CircuitBreakerOpen(
-                        f"Circuit breaker '{self.name}' is OPEN"
-                    )
+        """
+        执行受保护的操作
+        
+        Args:
+            func: 要执行的异步函数
+            *args, **kwargs: 函数参数
             
-            elif self._state == CircuitState.HALF_OPEN:
+        Returns:
+            函数执行结果
+            
+        Raises:
+            CircuitBreakerOpen: 熔断器打开时
+            Exception: 原函数抛出的异常
+        """
+        async with self._lock:
+            await self._transition_state()
+            
+            if self._state == CircuitState.OPEN:
+                raise CircuitBreakerOpen(
+                    f"Circuit {self.name} is OPEN. "
+                    f"Retry after {self.config.recovery_timeout}s"
+                )
+            
+            if self._state == CircuitState.HALF_OPEN:
                 if self._half_open_calls >= self.config.half_open_max_calls:
                     raise CircuitBreakerOpen(
-                        f"Circuit breaker '{self.name}' half-open limit reached"
+                        f"Circuit {self.name} HALF_OPEN limit reached"
                     )
                 self._half_open_calls += 1
         
-        # 执行实际调用
+        # 执行实际调用（在锁外执行，避免阻塞其他请求）
         try:
             result = await func(*args, **kwargs)
             await self._on_success()
@@ -90,23 +111,16 @@ class CircuitBreaker:
             await self._on_failure()
             raise
     
-    def _can_attempt_reset(self) -> bool:
-        """检查是否可以尝试恢复"""
-        if self._last_failure_time is None:
-            return True
-        return time.time() - self._last_failure_time >= self.config.recovery_timeout
-    
-    async def _on_success(self):
-        """成功处理"""
-        async with self._lock:
-            if self._state == CircuitState.HALF_OPEN:
-                self._success_count += 1
-                if self._success_count >= self.config.success_threshold:
-                    self._state = CircuitState.CLOSED
-                    self._failure_count = 0
-                    logger.info(f"Circuit breaker '{self.name}' CLOSED (recovered)")
-            else:
-                self._failure_count = 0
+    async def _transition_state(self):
+        """状态转换逻辑"""
+        if self._state == CircuitState.OPEN:
+            # 检查是否可以进入半开状态
+            elapsed = time.time() - (self._last_failure_time or 0)
+            if elapsed >= self.config.recovery_timeout:
+                self._state = CircuitState.HALF_OPEN
+                self._half_open_calls = 0
+                self._success_count = 0
+                logger.info(f"Circuit {self.name} entering HALF_OPEN")
     
     async def _on_failure(self):
         """失败处理"""
@@ -115,91 +129,79 @@ class CircuitBreaker:
             self._last_failure_time = time.time()
             
             if self._state == CircuitState.HALF_OPEN:
-                # 半开状态失败，重新熔断
+                # 半开状态失败：回到熔断
                 self._state = CircuitState.OPEN
-                logger.warning(
-                    f"Circuit breaker '{self.name}' OPEN (half-open failed)"
-                )
+                logger.warning(f"Circuit {self.name} back to OPEN due to failure in HALF_OPEN")
             elif self._failure_count >= self.config.failure_threshold:
-                # 达到失败阈值，触发熔断
+                # 达到阈值：触发熔断
                 self._state = CircuitState.OPEN
-                logger.warning(
-                    f"Circuit breaker '{self.name}' OPEN "
-                    f"({self._failure_count} failures)"
-                )
-
-
-class CircuitBreakerMiddleware(BaseHTTPMiddleware):
-    """熔断中间件"""
+                logger.error(f"Circuit {self.name} OPENED after {self._failure_count} failures")
     
-    def __init__(
-        self,
-        app: ASGIApp,
-        config: Optional[CircuitBreakerConfig] = None
-    ):
-        super().__init__(app)
-        self.config = config or CircuitBreakerConfig()
+    async def _on_success(self):
+        """成功处理"""
+        async with self._lock:
+            if self._state == CircuitState.HALF_OPEN:
+                self._success_count += 1
+                if self._success_count >= self.config.success_threshold:
+                    # 恢复成功：关闭熔断
+                    self._state = CircuitState.CLOSED
+                    self._failure_count = 0
+                    self._half_open_calls = 0
+                    logger.info(f"Circuit {self.name} CLOSED (recovered)")
+            else:
+                # CLOSED状态下，重置失败计数
+                if self._failure_count > 0:
+                    self._failure_count = 0
+    
+    def get_metrics(self) -> dict:
+        """获取熔断器指标"""
+        return {
+            "name": self.name,
+            "state": self._state.value,
+            "failure_count": self._failure_count,
+            "success_count": self._success_count,
+            "half_open_calls": self._half_open_calls,
+            "last_failure_time": self._last_failure_time
+        }
+
+
+class CircuitBreakerRegistry:
+    """熔断器注册表"""
+    
+    def __init__(self):
         self._breakers: dict[str, CircuitBreaker] = {}
-        
-        # 为不同服务创建熔断器
-        self._services = [
-            "embedding",
-            "rerank",
-            "llm",
-            "vector_store"
-        ]
-        
-        for service in self._services:
-            self._breakers[service] = CircuitBreaker(service, self.config)
     
-    async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        """处理请求"""
-        # 检查关键服务熔断状态
-        open_services = [
-            name for name, cb in self._breakers.items()
-            if cb.state == CircuitState.OPEN
-        ]
-        
-        if open_services:
-            logger.warning(f"Services currently open: {open_services}")
-        
-        try:
-            response = await call_next(request)
-            return response
-        except Exception as e:
-            logger.error(f"Request failed: {e}")
-            raise
+    def get_or_create(
+        self,
+        name: str,
+        config: Optional[CircuitBreakerConfig] = None
+    ) -> CircuitBreaker:
+        """获取或创建熔断器"""
+        if name not in self._breakers:
+            self._breakers[name] = CircuitBreaker(name, config)
+        return self._breakers[name]
+    
+    def get(self, name: str) -> Optional[CircuitBreaker]:
+        """获取熔断器"""
+        return self._breakers.get(name)
+    
+    def get_all_metrics(self) -> list:
+        """获取所有熔断器指标"""
+        return [breaker.get_metrics() for breaker in self._breakers.values()]
 
 
-class CircuitBreakerOpen(Exception):
-    """熔断器打开异常"""
-    pass
+# 全局注册表
+_registry = CircuitBreakerRegistry()
 
 
-def circuit_breaker(
+def get_circuit_breaker(
     name: str,
-    failure_threshold: int = 5,
-    recovery_timeout: float = 30.0
-):
-    """
-    熔断装饰器
-    
-    Args:
-        name: 熔断器名称
-        failure_threshold: 失败阈值
-        recovery_timeout: 恢复超时（秒）
-    """
-    breaker = CircuitBreaker(name, CircuitBreakerConfig(
-        failure_threshold=failure_threshold,
-        recovery_timeout=recovery_timeout
-    ))
-    
-    def decorator(func):
-        async def wrapper(*args, **kwargs):
-            return await breaker.call(func, *args, **kwargs)
-        
-        # 附加熔断器实例，便于外部检查状态
-        wrapper._circuit_breaker = breaker
-        return wrapper
-    
-    return decorator
+    config: Optional[CircuitBreakerConfig] = None
+) -> CircuitBreaker:
+    """获取熔断器"""
+    return _registry.get_or_create(name, config)
+
+
+def get_all_circuit_breaker_metrics() -> list:
+    """获取所有熔断器指标"""
+    return _registry.get_all_metrics()
