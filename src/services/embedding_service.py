@@ -1,204 +1,395 @@
 """
-Embedding Service - Embedding推理服务
-支持BGE模型、批处理、GPU加速、连接池
+Embedding Service - 向量化服务
+
+支持:
+- BAAI/bge-small-zh-v1.5 (默认，轻量高效)
+- 其他sentence-transformers模型
+- ChromaDB向量存储
+- 批量编码
 """
-import asyncio
-import numpy as np
-from typing import List, Optional, Union
-import torch
-from sentence_transformers import SentenceTransformer
+import os
 import hashlib
-from functools import lru_cache
+from typing import List, Dict, Any, Optional, Union
+from dataclasses import dataclass
+import logging
 
-from src.core.config import settings
-from src.core.logging import get_logger
-from src.utils.cache import get_cache_manager, CacheManager
+logger = logging.getLogger(__name__)
 
-logger = get_logger(__name__)
+# 尝试导入torch/transformers
+try:
+    import torch
+    import numpy as np
+    from sentence_transformers import SentenceTransformer
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
+    torch = None
+    np = None
+    SentenceTransformer = None
+
+# 尝试导入ChromaDB
+try:
+    import chromadb
+    from chromadb.config import Settings
+    CHROMA_AVAILABLE = True
+except ImportError:
+    CHROMA_AVAILABLE = False
+    chromadb = None
+
+
+@dataclass
+class EmbeddingConfig:
+    """Embedding配置"""
+    model_name: str = "BAAI/bge-small-zh-v1.5"
+    device: str = "cpu"  # cpu/cuda
+    normalize_embeddings: bool = True
+    batch_size: int = 32
+    max_seq_length: int = 512
+
+
+@dataclass
+class VectorStoreConfig:
+    """向量存储配置"""
+    persist_directory: str = "./chroma_db"
+    collection_name: str = "documents"
+    distance_fn: str = "cosine"  # cosine/l2/ip
 
 
 class EmbeddingService:
     """
-    Embedding服务
-
-    特性：
-    - 模型自动加载/卸载
-    - 批处理优化
-    - GPU加速
-    - 本地缓存
+    向量化服务
+    
+    使用示例:
+        service = EmbeddingService()
+        embeddings = service.encode(["文本1", "文本2"])
     """
-
-    def __init__(self):
-        self.model: Optional[SentenceTransformer] = None
-        self.model_name = settings.EMBEDDING_MODEL
-        self.device = self._get_device()
-        self.batch_size = 32
-        self.cache = None
-        self._lock = asyncio.Lock()
-        self._initialized = False
-
-    async def initialize(self):
-        """异步初始化"""
-        if self._initialized:
-            return
+    
+    def __init__(self, config: Optional[EmbeddingConfig] = None):
+        self.config = config or EmbeddingConfig()
+        self._model = None
+        self._model_loaded = False
         
-        self.cache = await get_cache_manager()
-        self._load_model()
-        self._initialized = True
-        logger.info("Embedding service initialized")
-
-    def _get_device(self) -> str:
-        """获取计算设备"""
-        if torch.cuda.is_available():
-            logger.info("Using GPU for embeddings")
-            return "cuda"
-        return "cpu"
-
+        if not TORCH_AVAILABLE:
+            logger.warning("torch/sentence-transformers not installed. "
+                          "Install: pip install torch sentence-transformers")
+    
     def _load_model(self):
         """加载模型"""
-        logger.info(f"Loading embedding model: {self.model_name}")
-        try:
-            self.model = SentenceTransformer(
-                self.model_name,
-                device=self.device
-            )
-            logger.info(f"Model loaded. Dimension: {self.model.get_sentence_embedding_dimension()}")
-        except Exception as e:
-            logger.error(f"Failed to load model: {e}")
-            raise
-
-    async def encode(
+        if not TORCH_AVAILABLE:
+            raise ImportError("sentence-transformers required")
+        
+        if self._model_loaded:
+            return
+        
+        logger.info(f"Loading embedding model: {self.config.model_name}")
+        
+        self._model = SentenceTransformer(
+            self.config.model_name,
+            device=self.config.device
+        )
+        self._model.max_seq_length = self.config.max_seq_length
+        self._model_loaded = True
+        
+        logger.info(f"Model loaded on {self.config.device}")
+    
+    def encode(
         self,
         texts: Union[str, List[str]],
-        normalize: bool = True,
-        use_cache: bool = True
-    ) -> np.ndarray:
+        show_progress: bool = False
+    ) -> List[List[float]]:
         """
         编码文本
-
+        
         Args:
-            texts: 单条或多条文本
-            normalize: 是否归一化
-            use_cache: 是否使用缓存
+            texts: 单个文本或文本列表
+            show_progress: 是否显示进度条
+        
+        Returns:
+            嵌入向量列表
         """
+        if not TORCH_AVAILABLE:
+            raise ImportError("sentence-transformers not installed")
+        
+        self._load_model()
+        
+        # 确保是列表
         if isinstance(texts, str):
             texts = [texts]
-
-        if not texts:
-            return np.array([])
-
-        # 检查缓存
-        if use_cache and len(texts) == 1:
-            cached = await self._get_cached_embedding(texts[0])
-            if cached is not None:
-                return cached
-
-        async with self._lock:
-            # 异步执行CPU密集型任务
-            loop = asyncio.get_event_loop()
-            embeddings = await loop.run_in_executor(
-                None,
-                self._encode_sync,
-                texts,
-                normalize
-            )
-
-        # 缓存结果
-        if use_cache and len(texts) == 1:
-            await self._cache_embedding(texts[0], embeddings[0])
-
-        return embeddings
-
-    def _encode_sync(
-        self,
-        texts: List[str],
-        normalize: bool
-    ) -> np.ndarray:
-        """同步编码（在线程池中执行）"""
-        if self.model is None:
-            raise RuntimeError("Model not loaded")
-
-        embeddings = self.model.encode(
+        
+        # 过滤空文本
+        texts = [t.strip() if t else "" for t in texts]
+        
+        # 编码
+        embeddings = self._model.encode(
             texts,
-            batch_size=self.batch_size,
-            normalize_embeddings=normalize,
-            convert_to_numpy=True,
-            show_progress_bar=False
+            batch_size=self.config.batch_size,
+            show_progress_bar=show_progress,
+            normalize_embeddings=self.config.normalize_embeddings,
+            convert_to_numpy=True
         )
-        return embeddings
+        
+        return embeddings.tolist()
+    
+    def encode_queries(self, queries: List[str]) -> List[List[float]]:
+        """编码查询（添加指令）"""
+        # BGE模型推荐为查询添加指令
+        instructed_queries = [
+            f"Represent this sentence for searching relevant passages: {q}"
+            for q in queries
+        ]
+        return self.encode(instructed_queries)
+    
+    def similarity(
+        self,
+        query_embedding: List[float],
+        doc_embeddings: List[List[float]]
+    ) -> List[float]:
+        """
+        计算相似度（余弦相似度）
+        """
+        if not np:
+            raise ImportError("numpy not installed")
+        
+        query = np.array(query_embedding)
+        docs = np.array(doc_embeddings)
+        
+        # 归一化
+        query_norm = query / np.linalg.norm(query)
+        docs_norm = docs / np.linalg.norm(docs, axis=1, keepdims=True)
+        
+        # 余弦相似度
+        similarities = np.dot(docs_norm, query_norm)
+        
+        return similarities.tolist()
+    
+    def get_model_info(self) -> Dict[str, Any]:
+        """获取模型信息"""
+        if not self._model_loaded:
+            return {"status": "not_loaded", "model_name": self.config.model_name}
+        
+        return {
+            "status": "loaded",
+            "model_name": self.config.model_name,
+            "device": self.config.device,
+            "max_seq_length": self.config.max_seq_length,
+            "embedding_dim": self._model.get_sentence_embedding_dimension()
+        }
 
-    async def _get_cached_embedding(self, text: str) -> Optional[np.ndarray]:
-        """获取缓存的Embedding"""
-        key = self._make_cache_key(text)
-        cached = await self.cache.get(key)
-        if cached is not None:
-            return np.array(cached)
-        return None
 
-    async def _cache_embedding(self, text: str, embedding: np.ndarray):
-        """缓存Embedding"""
-        key = self._make_cache_key(text)
-        await self.cache.set(key, embedding.tolist())
-
-    def _make_cache_key(self, text: str) -> str:
-        """生成缓存key"""
-        text_hash = hashlib.md5(text.encode()).hexdigest()
-        return f"emb:{self.model_name}:{text_hash}"
-
-    def encode_sync(self, texts: List[str]) -> np.ndarray:
-        """同步编码接口"""
-        return self._encode_sync(texts, normalize=True)
-
-
-class EmbeddingPool:
+class VectorStore:
     """
-    Embedding连接池
-    支持多实例并发处理
+    向量存储服务 (ChromaDB)
+    
+    使用示例:
+        store = VectorStore()
+        store.add_documents([{"id": "1", "text": "内容", "embedding": [...]}])
+        results = store.search(query_embedding, top_k=5)
     """
+    
+    def __init__(self, config: Optional[VectorStoreConfig] = None):
+        self.config = config or VectorStoreConfig()
+        self._client = None
+        self._collection = None
+        
+        if not CHROMA_AVAILABLE:
+            logger.warning("chromadb not installed. "
+                          "Install: pip install chromadb")
+    
+    def _init_client(self):
+        """初始化客户端"""
+        if not CHROMA_AVAILABLE:
+            raise ImportError("chromadb required")
+        
+        if self._client is not None:
+            return
+        
+        # 创建持久化目录
+        os.makedirs(self.config.persist_directory, exist_ok=True)
+        
+        self._client = chromadb.Client(Settings(
+            persist_directory=self.config.persist_directory,
+            anonymized_telemetry=False
+        ))
+        
+        # 获取或创建集合
+        self._collection = self._client.get_or_create_collection(
+            name=self.config.collection_name,
+            metadata={"hnsw:space": self.config.distance_fn}
+        )
+        
+        logger.info(f"Vector store initialized: {self.config.collection_name}")
+    
+    def add_documents(
+        self,
+        documents: List[Dict[str, Any]],
+        embeddings: List[List[float]]
+    ):
+        """
+        添加文档
+        
+        Args:
+            documents: [{"id": str, "text": str, "metadata": dict}, ...]
+            embeddings: 对应的嵌入向量
+        """
+        self._init_client()
+        
+        ids = [doc["id"] for doc in documents]
+        texts = [doc["text"] for doc in documents]
+        metadatas = [doc.get("metadata", {}) for doc in documents]
+        
+        self._collection.add(
+            ids=ids,
+            documents=texts,
+            embeddings=embeddings,
+            metadatas=metadatas
+        )
+        
+        logger.info(f"Added {len(documents)} documents to vector store")
+    
+    def search(
+        self,
+        query_embedding: List[float],
+        top_k: int = 5,
+        filter_dict: Optional[Dict[str, Any]] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        向量搜索
+        
+        Args:
+            query_embedding: 查询向量
+            top_k: 返回结果数
+            filter_dict: 元数据过滤条件
+        
+        Returns:
+            [{"id": str, "text": str, "score": float, "metadata": dict}, ...]
+        """
+        self._init_client()
+        
+        results = self._collection.query(
+            query_embeddings=[query_embedding],
+            n_results=top_k,
+            where=filter_dict
+        )
+        
+        # 格式化结果
+        formatted = []
+        for i in range(len(results["ids"][0])):
+            formatted.append({
+                "id": results["ids"][0][i],
+                "text": results["documents"][0][i],
+                "score": float(results["distances"][0][i]),
+                "metadata": results["metadatas"][0][i] if results["metadatas"] else {}
+            })
+        
+        return formatted
+    
+    def delete(self, ids: List[str]):
+        """删除文档"""
+        self._init_client()
+        self._collection.delete(ids=ids)
+        logger.info(f"Deleted {len(ids)} documents")
+    
+    def get_stats(self) -> Dict[str, Any]:
+        """获取统计信息"""
+        self._init_client()
+        count = self._collection.count()
+        return {
+            "collection_name": self.config.collection_name,
+            "document_count": count,
+            "persist_directory": self.config.persist_directory
+        }
+    
+    def persist(self):
+        """持久化数据"""
+        if self._client:
+            # ChromaDB自动持久化
+            logger.info("Data persisted")
 
-    def __init__(self, pool_size: int = 2):
-        self.pool_size = pool_size
-        self.instances: List[EmbeddingService] = []
-        self._current = 0
-        self._lock = asyncio.Lock()
 
-    async def initialize(self):
-        """初始化连接池"""
-        logger.info(f"Initializing embedding pool (size={self.pool_size})")
-        for i in range(self.pool_size):
-            instance = EmbeddingService()
-            self.instances.append(instance)
-            logger.info(f"Instance {i+1}/{self.pool_size} ready")
+class RAGIngestionPipeline:
+    """
+    RAG文档入库Pipeline
+    
+    使用示例:
+        pipeline = RAGIngestionPipeline()
+        pipeline.ingest_file("document.pdf")
+    """
+    
+    def __init__(
+        self,
+        embedding_config: Optional[EmbeddingConfig] = None,
+        vector_config: Optional[VectorStoreConfig] = None
+    ):
+        self.embedding_service = EmbeddingService(embedding_config)
+        self.vector_store = VectorStore(vector_config)
+    
+    def ingest_documents(
+        self,
+        documents: List[Dict[str, str]],
+        batch_size: int = 32
+    ):
+        """
+        批量入库文档
+        
+        Args:
+            documents: [{"id": str, "text": str, "metadata": dict}, ...]
+        """
+        texts = [doc["text"] for doc in documents]
+        
+        # 批量编码
+        logger.info(f"Encoding {len(texts)} documents...")
+        embeddings = self.embedding_service.encode(
+            texts,
+            show_progress=True
+        )
+        
+        # 入库
+        self.vector_store.add_documents(documents, embeddings)
+        
+        logger.info(f"Ingested {len(documents)} documents")
+    
+    def search(
+        self,
+        query: str,
+        top_k: int = 5
+    ) -> List[Dict[str, Any]]:
+        """
+        搜索
+        
+        Args:
+            query: 查询文本
+            top_k: 返回结果数
+        
+        Returns:
+            检索结果列表
+        """
+        # 编码查询
+        query_embedding = self.embedding_service.encode_queries([query])[0]
+        
+        # 搜索
+        return self.vector_store.search(query_embedding, top_k)
 
-    async def encode(self, texts: List[str]) -> np.ndarray:
-        """轮询使用池中的实例"""
-        async with self._lock:
-            instance = self.instances[self._current]
-            self._current = (self._current + 1) % len(self.instances)
 
-        return await instance.encode(texts)
-
-    async def close(self):
-        """关闭连接池"""
-        self.instances.clear()
-
-
-# 全局服务实例
-_embedding_service: Optional[EmbeddingService] = None
+# 便捷函数
+def get_embedding_service(
+    model_name: str = "BAAI/bge-small-zh-v1.5",
+    device: str = "cpu"
+) -> EmbeddingService:
+    """获取向量化服务实例"""
+    config = EmbeddingConfig(
+        model_name=model_name,
+        device=device
+    )
+    return EmbeddingService(config)
 
 
-async def get_embedding_service() -> EmbeddingService:
-    """获取全局Embedding服务实例"""
-    global _embedding_service
-    if _embedding_service is None:
-        _embedding_service = EmbeddingService()
-        await _embedding_service.initialize()
-    elif not _embedding_service._initialized:
-        await _embedding_service.initialize()
-    return _embedding_service
-
-
-def get_embedding_service_sync() -> Optional[EmbeddingService]:
-    """同步获取Embedding服务（仅用于已初始化场景）"""
-    global _embedding_service
-    return _embedding_service
+def get_vector_store(
+    persist_dir: str = "./chroma_db",
+    collection: str = "documents"
+) -> VectorStore:
+    """获取向量存储实例"""
+    config = VectorStoreConfig(
+        persist_directory=persist_dir,
+        collection_name=collection
+    )
+    return VectorStore(config)
