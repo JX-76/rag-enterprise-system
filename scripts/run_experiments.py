@@ -197,7 +197,7 @@ class ExperimentRunner:
         ground_truth: List[set] = None
     ):
         self.output_dir = Path(output_dir)
-        self.output_dir.mkdir(exist_ok=True)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
         self.evaluator = RetrievalEvaluator()
         self.queries = queries or SAMPLE_QUERIES_MOCK
         self.ground_truth = ground_truth or SAMPLE_GROUND_TRUTH_MOCK

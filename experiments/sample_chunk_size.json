@@ -1,0 +1,60 @@
+{
+  "experiment": "chunk_size",
+  "name": "Chunk Size Impact",
+  "description": "测试不同chunk size对检索效果的影响",
+  "timestamp": "2024-04-06 14:30:00",
+  "results": [
+    {
+      "variant": "small (200)",
+      "strategy": "chunk_small",
+      "config": {"size": 200},
+      "metrics": {
+        "recall@1": 0.52,
+        "recall@5": 0.65,
+        "recall@10": 0.72,
+        "mrr": 0.45,
+        "ndcg@5": 0.58,
+        "latency_ms": 35.0
+      }
+    },
+    {
+      "variant": "medium (500)",
+      "strategy": "chunk_medium",
+      "config": {"size": 500},
+      "metrics": {
+        "recall@1": 0.58,
+        "recall@5": 0.72,
+        "recall@10": 0.78,
+        "mrr": 0.52,
+        "ndcg@5": 0.65,
+        "latency_ms": 42.0
+      }
+    },
+    {
+      "variant": "large (1000)",
+      "strategy": "chunk_large",
+      "config": {"size": 1000},
+      "metrics": {
+        "recall@1": 0.55,
+        "recall@5": 0.68,
+        "recall@10": 0.75,
+        "mrr": 0.48,
+        "ndcg@5": 0.61,
+        "latency_ms": 55.0
+      }
+    },
+    {
+      "variant": "parent-child",
+      "strategy": "chunk_parent_child",
+      "config": {"parent": 1000, "child": 200},
+      "metrics": {
+        "recall@1": 0.68,
+        "recall@5": 0.81,
+        "recall@10": 0.87,
+        "mrr": 0.61,
+        "ndcg@5": 0.72,
+        "latency_ms": 48.0
+      }
+    }
+  ]
+}
