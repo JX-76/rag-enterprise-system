@@ -6,19 +6,19 @@
 
 ## 🛠️ 技术栈
 
-> 精选一套**实用、主流、面试友好**的方案，详见 [docs/tech-stack.md](docs/tech-stack.md)
-
-| 层级 | 选型 | 备选 |
+| 层级 | 选型 | 说明 |
 |------|------|------|
-| **API框架** | FastAPI | - |
-| **LLM框架** | LangChain | - |
-| **向量数据库** | ChromaDB (开发) / Milvus (生产) | pgvector |
-| **Embedding** | BGE (中文优化) | OpenAI |
-| **LLM** | OpenAI / 通义千问 | Claude |
-| **数据库** | PostgreSQL + Redis | - |
-| **任务队列** | Celery | - |
-| **监控** | Prometheus + Grafana | - |
-| **部署** | Docker Compose / Kubernetes | - |
+| **API框架** | FastAPI | 异步高性能，类型安全 |
+| **LLM框架** | LangChain | 快速接入多厂商LLM |
+| **向量数据库** | ChromaDB → Milvus | 渐进式升级 |
+| **Embedding** | BGE | 中文优化，本地部署 |
+| **LLM** | OpenAI / 通义千问 | 主备切换 |
+| **数据库** | PostgreSQL + Redis | 关系+缓存 |
+| **任务队列** | Celery | 异步文档处理 |
+| **监控** | Prometheus + Grafana | 性能观测 |
+| **部署** | Docker / Kubernetes | 按需选择 |
+
+详见 [docs/tech-stack.md](docs/tech-stack.md)
 
 ---
 
