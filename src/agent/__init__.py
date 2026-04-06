@@ -8,12 +8,13 @@ Agent 模块
 4. 记忆管理
 5. 对话管理
 """
-from .agent import RAGAgent, AgentConfig
-from .dialogue import DialogueManager, DialogueState
+# 注意：使用相对导入，需要作为包导入
+# from .agent import RAGAgent, AgentConfig
+# from .dialogue import DialogueManager, DialogueState
 
-__all__ = [
-    'RAGAgent',
-    'AgentConfig',
-    'DialogueManager',
-    'DialogueState'
-]
+# __all__ = [
+#     'RAGAgent',
+#     'AgentConfig',
+#     'DialogueManager',
+#     'DialogueState'
+# ]

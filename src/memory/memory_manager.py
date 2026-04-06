@@ -7,7 +7,6 @@ Memory 四层架构管理器
 3. 遗忘机制（基于访问频率和时间）
 4. 记忆融合和冲突解决
 """
-import hashlib
 import json
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Any
@@ -425,17 +424,20 @@ class MemoryManager:
         # 时间衰减
         cursor.execute("""
             UPDATE long_term_memory
-            SET importance_score = importance_score * %s,
+            SET importance_score = COALESCE(importance_score, 1.0) * %s,
                 updated_at = NOW()
             WHERE updated_at < NOW() - INTERVAL '7 days'
+              AND (forgotten IS NULL OR forgotten = false)
         """, (self.importance_decay,))
         
         # 标记遗忘（30天未访问且重要性低）
         cursor.execute("""
             UPDATE long_term_memory
-            SET metadata = metadata || '{"forgotten": true}'
+            SET metadata = metadata || '{"forgotten": true}',
+                updated_at = NOW()
             WHERE updated_at < NOW() - INTERVAL '30 days'
-              AND importance_score < 0.3
+              AND COALESCE(importance_score, 1.0) < 0.3
+              AND (forgotten IS NULL OR forgotten = false)
         """)
         
         self.pg_conn.commit()

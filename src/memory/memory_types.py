@@ -48,11 +48,26 @@ class Memory:
 
     @classmethod
     def from_dict(cls, data: dict) -> 'Memory':
+        """从字典创建记忆对象
+        
+        注意：子类需要重写此方法以处理额外字段
+        """
+        # 根据layer类型创建对应子类实例
+        layer = MemoryLayer(data['layer'])
+        
+        if layer == MemoryLayer.SHORT:
+            return ShortTermMemory.from_dict(data)
+        elif layer == MemoryLayer.LONG:
+            return LongTermMemory.from_dict(data)
+        elif layer == MemoryLayer.GLOBAL:
+            return GlobalMemory.from_dict(data)
+        
+        # 默认创建基类
         return cls(
             id=data['id'],
             user_id=data['user_id'],
             session_id=data.get('session_id'),
-            layer=MemoryLayer(data['layer']),
+            layer=layer,
             content=data['content'],
             metadata=data.get('metadata', {}),
             embedding=data.get('embedding'),
@@ -70,7 +85,8 @@ class UltraShortTermMemory(Memory):
     context_window: int = 10  # 上下文窗口大小
 
     def __post_init__(self):
-        self.layer = MemoryLayer.ULTRA_SHORT
+        if self.layer is None:
+            self.layer = MemoryLayer.ULTRA_SHORT
 
     def add_message(self, role: str, content: str, metadata: dict = None):
         """添加消息"""
@@ -101,7 +117,28 @@ class ShortTermMemory(Memory):
     task_history: List[Dict] = field(default_factory=list)  # 任务执行记录
 
     def __post_init__(self):
-        self.layer = MemoryLayer.SHORT
+        if self.layer is None:
+            self.layer = MemoryLayer.SHORT
+
+    @classmethod
+    def from_dict(cls, data: dict) -> 'ShortTermMemory':
+        """从字典创建短期记忆"""
+        return cls(
+            id=data['id'],
+            user_id=data['user_id'],
+            session_id=data.get('session_id'),
+            layer=MemoryLayer(data['layer']),
+            content=data['content'],
+            metadata=data.get('metadata', {}),
+            embedding=data.get('embedding'),
+            created_at=datetime.fromisoformat(data['created_at']),
+            updated_at=datetime.fromisoformat(data['updated_at']),
+            access_count=data.get('access_count', 0),
+            importance_score=data.get('importance_score', 1.0),
+            session_summary=data.get('session_summary', ''),
+            key_entities=data.get('key_entities', []),
+            task_history=data.get('task_history', [])
+        )
 
     def add_task_record(self, task_type: str, status: str, result: str):
         """添加任务记录"""
@@ -127,7 +164,31 @@ class LongTermMemory(Memory):
     response_style: str = "professional"  # 回答风格
 
     def __post_init__(self):
-        self.layer = MemoryLayer.LONG
+        if self.layer is None:
+            self.layer = MemoryLayer.LONG
+
+    @classmethod
+    def from_dict(cls, data: dict) -> 'LongTermMemory':
+        """从字典创建长期记忆"""
+        return cls(
+            id=data['id'],
+            user_id=data['user_id'],
+            session_id=data.get('session_id'),
+            layer=MemoryLayer(data['layer']),
+            content=data['content'],
+            metadata=data.get('metadata', {}),
+            embedding=data.get('embedding'),
+            created_at=datetime.fromisoformat(data['created_at']),
+            updated_at=datetime.fromisoformat(data['updated_at']),
+            access_count=data.get('access_count', 0),
+            importance_score=data.get('importance_score', 1.0),
+            user_profile=data.get('user_profile', {}),
+            preferences=data.get('preferences', {}),
+            frequent_topics=data.get('frequent_topics', []),
+            knowledge_gaps=data.get('knowledge_gaps', []),
+            domain_expertise=data.get('domain_expertise', ''),
+            response_style=data.get('response_style', 'professional')
+        )
 
     def update_preference(self, key: str, value: Any):
         """更新偏好"""
@@ -152,4 +213,27 @@ class GlobalMemory(Memory):
     tags: List[str] = field(default_factory=list)
 
     def __post_init__(self):
-        self.layer = MemoryLayer.GLOBAL
+        if self.layer is None:
+            self.layer = MemoryLayer.GLOBAL
+
+    @classmethod
+    def from_dict(cls, data: dict) -> 'GlobalMemory':
+        """从字典创建全局记忆"""
+        return cls(
+            id=data['id'],
+            user_id=data['user_id'],
+            session_id=data.get('session_id'),
+            layer=MemoryLayer(data['layer']),
+            content=data['content'],
+            metadata=data.get('metadata', {}),
+            embedding=data.get('embedding'),
+            created_at=datetime.fromisoformat(data['created_at']),
+            updated_at=datetime.fromisoformat(data['updated_at']),
+            access_count=data.get('access_count', 0),
+            importance_score=data.get('importance_score', 1.0),
+            category=data.get('category', ''),
+            source=data.get('source', ''),
+            version=data.get('version', '1.0'),
+            approved=data.get('approved', False),
+            tags=data.get('tags', [])
+        )

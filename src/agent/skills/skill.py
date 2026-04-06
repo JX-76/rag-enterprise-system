@@ -135,7 +135,6 @@ class Skill(ABC):
         self.total_execution_time = 0.0
         self.average_rating = 1.0  # 平均评分（-1到1）
     
-    @abstractmethod
     async def execute(
         self,
         params: Dict[str, Any],
@@ -182,6 +181,14 @@ class Skill(ABC):
                 prop["enum"] = param.enum
             if param.examples:
                 prop["examples"] = param.examples
+            
+            # array 类型需要 items 定义
+            if param.type == ParameterType.ARRAY:
+                prop["items"] = {"type": "string"}  # 默认字符串数组
+            
+            # object 类型需要 properties 定义
+            if param.type == ParameterType.OBJECT:
+                prop["additionalProperties"] = True  # 允许任意属性
             
             properties[param.name] = prop
             
@@ -255,11 +262,16 @@ class CompositeSkill(Skill):
         name: str,
         description: str,
         sub_skills: List[tuple[str, Dict[str, str]]],  # [(skill_name, param_mapping)]
+        skill_library: 'SkillLibrary' = None,  # type: ignore
         **kwargs
     ):
         super().__init__(name, description, [], **kwargs)
         self.sub_skills = sub_skills  # 子技能及参数映射
-        self.skill_library = None  # 需要外部注入
+        self._skill_library = skill_library  # 技能库引用
+    
+    def set_skill_library(self, skill_library: 'SkillLibrary'):  # type: ignore
+        """设置技能库（必须在execute前调用）"""
+        self._skill_library = skill_library
     
     async def execute(
         self,
@@ -267,14 +279,14 @@ class CompositeSkill(Skill):
         context: SkillExecutionContext
     ) -> SkillResult:
         """顺序执行子技能"""
-        if not self.skill_library:
-            return SkillResult.error_result("技能库未设置")
+        if not self._skill_library:
+            return SkillResult.error_result("技能库未设置，请先调用 set_skill_library()")
         
         results = []
         accumulated_data = {}
         
         for step_idx, (skill_name, param_mapping) in enumerate(self.sub_skills):
-            skill = self.skill_library.get_skill(skill_name)
+            skill = self._skill_library.get_skill(skill_name)
             if not skill:
                 return SkillResult.error_result(f"找不到子技能: {skill_name}")
             

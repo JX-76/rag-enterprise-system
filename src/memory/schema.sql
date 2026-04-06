@@ -14,7 +14,8 @@ CREATE TABLE IF NOT EXISTS long_term_memory (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     access_count INTEGER DEFAULT 0,
     importance_score FLOAT DEFAULT 1.0,
-    metadata JSONB DEFAULT '{}'
+    metadata JSONB DEFAULT '{}',
+    forgotten BOOLEAN DEFAULT FALSE
 );
 
 -- 索引
