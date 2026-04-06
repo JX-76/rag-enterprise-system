@@ -1,0 +1,73 @@
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile
+    ports:
+      - "8000:8000"
+      - "9090:9090"  # metrics
+    environment:
+      - DEBUG=false
+      - WORKERS=4
+      - REDIS_URL=redis://redis:6379/0
+      - VECTOR_STORE_HOST=milvus
+    depends_on:
+      - redis
+      - milvus
+    volumes:
+      - ./models:/app/models
+      - ./data:/app/data
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 8G
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+  milvus:
+    image: milvusdb/milvus:v2.3.0
+    ports:
+      - "19530:19530"
+      - "9091:9091"
+    volumes:
+      - milvus_data:/var/lib/milvus
+    environment:
+      - ETCD_USE_EMBED=true
+      - MINIO_USE_EMBED=true
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9092:9090"
+    volumes:
+      - ./deploy/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./deploy/monitoring/grafana:/etc/grafana/provisioning
+      - grafana_data:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    restart: unless-stopped
+
+volumes:
+  redis_data:
+  milvus_data:
+  prometheus_data:
+  grafana_data:

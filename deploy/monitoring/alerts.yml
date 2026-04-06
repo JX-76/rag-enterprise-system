@@ -1,0 +1,62 @@
+groups:
+- name: rag-system
+  rules:
+  # API健康告警
+  - alert: RAGAPIDown
+    expr: up{job="rag-api"} == 0
+    for: 1m
+    labels:
+      severity: critical
+    annotations:
+      summary: "RAG API is down"
+      description: "RAG API has been down for more than 1 minute"
+
+  # 高延迟告警
+  - alert: RAGHighLatency
+    expr: histogram_quantile(0.99, rate(http_request_duration_seconds_bucket{job="rag-api"}[5m])) > 1
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "RAG API high latency"
+      description: "P99 latency is above 1 second for 5 minutes"
+
+  # 错误率告警
+  - alert: RAGHighErrorRate
+    expr: rate(http_requests_total{job="rag-api",status=~"5.."}[5m]) / rate(http_requests_total{job="rag-api"}[5m]) > 0.05
+    for: 5m
+    labels:
+      severity: critical
+    annotations:
+      summary: "RAG API high error rate"
+      description: "Error rate is above 5% for 5 minutes"
+
+  # 限流触发告警
+  - alert: RAGRateLimitTriggered
+    expr: rate(http_requests_total{job="rag-api",status="429"}[5m]) > 0
+    for: 1m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Rate limit triggered"
+      description: "Requests are being rate limited"
+
+  # Redis连接告警
+  - alert: RedisDown
+    expr: up{job="redis"} == 0
+    for: 1m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Redis is down"
+      description: "Redis cache is unavailable"
+
+  # Milvus告警
+  - alert: MilvusDown
+    expr: up{job="milvus"} == 0
+    for: 1m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Milvus is down"
+      description: "Vector database is unavailable"

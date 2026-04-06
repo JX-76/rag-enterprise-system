@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rag-config
+  namespace: rag-system
+data:
+  app.yaml: |
+    app:
+      name: "Enterprise RAG System"
+      debug: false
+      log_level: INFO
+    
+    retrieval:
+      dense_weight: 0.4
+      sparse_weight: 0.3
+      bm25_weight: 0.3
+      top_k: 20
+      
+    rerank:
+      stage1_model: "BAAI/bge-small-zh"
+      stage2_model: "BAAI/bge-reranker-large"
+      stage3_optimize: true
+      
+    cache:
+      ttl: 3600
+      max_size: 10000
+      
+    limits:
+      max_query_length: 1000
+      max_context_length: 4000
+      max_sources: 10
