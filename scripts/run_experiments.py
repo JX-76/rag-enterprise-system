@@ -25,9 +25,35 @@ from src.core.logging import get_logger
 logger = get_logger(__name__)
 
 
-# ============== 模拟数据（真实场景应替换为真实数据） ==============
+# ============== 数据加载 ==============
 
-SAMPLE_QUERIES = [
+def load_arxiv_qa_pairs(data_file: str = "data/qa_pairs.json") -> tuple:
+    """
+    加载Arxiv问答对数据
+    
+    如果真实数据不存在，返回模拟数据
+    """
+    data_path = Path(data_file)
+    
+    if data_path.exists():
+        print(f"📚 加载真实数据: {data_file}")
+        with open(data_path, 'r', encoding='utf-8') as f:
+            qa_pairs = json.load(f)
+        
+        queries = [qa['question'] for qa in qa_pairs]
+        # ground truth用paper_id表示相关文档
+        ground_truth = [{qa.get('paper_id', '')} for qa in qa_pairs]
+        
+        print(f"✅ 加载了 {len(queries)} 个真实查询")
+        return queries, ground_truth
+    else:
+        print("⚠️ 真实数据不存在，使用模拟数据")
+        print("   提示: 运行 python scripts/download_arxiv.py 下载真实数据")
+        return SAMPLE_QUERIES_MOCK, SAMPLE_GROUND_TRUTH_MOCK
+
+
+# 模拟数据（备用）
+SAMPLE_QUERIES_MOCK = [
     "什么是机器学习？",
     "深度学习和神经网络的关系",
     "Transformer架构的原理",
@@ -40,8 +66,7 @@ SAMPLE_QUERIES = [
     "多模态大模型的发展",
 ]
 
-# 模拟ground truth（真实场景应该是相关文档ID集合）
-SAMPLE_GROUND_TRUTH = [
+SAMPLE_GROUND_TRUTH_MOCK = [
     {"doc_ml_001", "doc_ml_005", "doc_ai_012"},
     {"doc_dl_001", "doc_nn_003", "doc_ai_008"},
     {"doc_transformer_001", "doc_nlp_005"},
@@ -165,10 +190,17 @@ EXPERIMENTS = {
 class ExperimentRunner:
     """实验运行器"""
     
-    def __init__(self, output_dir: str = "experiments"):
+    def __init__(
+        self,
+        output_dir: str = "experiments",
+        queries: List[str] = None,
+        ground_truth: List[set] = None
+    ):
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(exist_ok=True)
         self.evaluator = RetrievalEvaluator()
+        self.queries = queries or SAMPLE_QUERIES_MOCK
+        self.ground_truth = ground_truth or SAMPLE_GROUND_TRUTH_MOCK
     
     async def run_experiment(
         self,
@@ -179,6 +211,7 @@ class ExperimentRunner:
         logger.info(f"\n{'='*60}")
         logger.info(f"Running Experiment: {exp_config['name']}")
         logger.info(f"Description: {exp_config['description']}")
+        logger.info(f"Data: {len(self.queries)} queries")
         logger.info(f"{'='*60}\n")
         
         results = []
@@ -197,18 +230,18 @@ class ExperimentRunner:
             start_time = time.time()
             all_results = []
             
-            for query in SAMPLE_QUERIES:
+            for query in self.queries:
                 results_list = await retriever.retrieve(query, top_k=10)
                 all_results.append(results_list)
             
             elapsed = time.time() - start_time
-            latency_ms = (elapsed / len(SAMPLE_QUERIES)) * 1000
+            latency_ms = (elapsed / len(self.queries)) * 1000
             
             # 评估指标
             metrics = self.evaluator.evaluate(
-                queries=SAMPLE_QUERIES,
+                queries=self.queries,
                 retrieved_results=all_results,
-                ground_truth=SAMPLE_GROUND_TRUTH
+                ground_truth=self.ground_truth
             )
             
             # 记录结果
@@ -284,10 +317,31 @@ async def main():
         default="experiments",
         help="Output directory for results"
     )
+    parser.add_argument(
+        "--data-file",
+        default="data/qa_pairs.json",
+        help="QA pairs data file for real evaluation"
+    )
+    parser.add_argument(
+        "--use-mock",
+        action="store_true",
+        help="Use mock data even if real data exists"
+    )
     
     args = parser.parse_args()
     
-    runner = ExperimentRunner(output_dir=args.output_dir)
+    # 加载数据
+    if args.use_mock:
+        queries, ground_truth = SAMPLE_QUERIES_MOCK, SAMPLE_GROUND_TRUTH_MOCK
+        print("🎭 使用模拟数据")
+    else:
+        queries, ground_truth = load_arxiv_qa_pairs(args.data_file)
+    
+    runner = ExperimentRunner(
+        output_dir=args.output_dir,
+        queries=queries,
+        ground_truth=ground_truth
+    )
     
     if args.experiment == "all":
         for exp_key, exp_config in EXPERIMENTS.items():
