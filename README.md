@@ -344,9 +344,6 @@ rag-enterprise-system/
 2. `src/ingestion/parent_child_chunker.py` - 父子分块策略
 3. `src/evaluation/metrics.py` - 检索评估指标
 
-面试时可以这样介绍：
-
-> "为了深入理解RAG系统，我独立实现了几个核心生产级模块。比如熔断器，实现了三态状态机和自动恢复逻辑；父子分块策略，用小粒度匹配、大粒度提供上下文；还有评估指标的计算逻辑。代码都在GitHub上，有完整单元测试。"
 
 ### 场景二：学习架构设计
 
@@ -356,13 +353,6 @@ rag-enterprise-system/
 - 模块之间的接口如何定义
 - 配置和实现的分离
 
-### 场景三：动手扩展
-
-如果你想基于这个项目继续开发：
-
-1. **接入真实LLM**：修改 `src/services/llm_service.py`，配置API Key或加载本地模型
-2. **接入真实数据**：运行 `pip install pypdf chromadb`，然后用自己的文档测试
-3. **跑评测**：准备问答对，用 `src/evaluation/metrics.py` 计算指标
 
 ---
 
