@@ -1,314 +1,485 @@
 """
-LLM Service - LLM推理服务
-支持OpenAI/Anthropic，流式输出，重试，降级
+LLM Service - 大语言模型服务
+
+支持:
+- 本地模型 (Qwen, ChatGLM等 via transformers)
+- API模型 (OpenAI, 通义千问API等)
+- 引用溯源
+- 幻觉检测
 """
-import asyncio
-from typing import AsyncGenerator, Optional, Dict, Any, List
+import re
+import os
+from typing import List, Dict, Any, Optional, Generator
 from dataclasses import dataclass
-from enum import Enum
-import time
+from abc import ABC, abstractmethod
+import logging
 
-import openai
-import anthropic
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+logger = logging.getLogger(__name__)
 
-from src.core.config import settings
-from src.core.logging import get_logger
-from src.core.monitoring import metrics
+# 尝试导入transformers
+try:
+    import torch
+    from transformers import AutoTokenizer, AutoModelForCausalLM, TextIteratorStreamer
+    from threading import Thread
+    TRANSFORMERS_AVAILABLE = True
+except ImportError:
+    TRANSFORMERS_AVAILABLE = False
+    torch = None
+    AutoTokenizer = None
+    AutoModelForCausalLM = None
+    TextIteratorStreamer = None
 
-logger = get_logger(__name__)
-
-
-class LLMProvider(Enum):
-    """LLM提供商"""
-    OPENAI = "openai"
-    ANTHROPIC = "anthropic"
+# 尝试导入openai
+try:
+    import openai
+    OPENAI_AVAILABLE = True
+except ImportError:
+    OPENAI_AVAILABLE = False
+    openai = None
 
 
 @dataclass
 class LLMResponse:
     """LLM响应"""
     content: str
-    provider: str
-    model: str
-    tokens_prompt: int
-    tokens_completion: int
-    latency_ms: float
-    finish_reason: Optional[str] = None
+    citations: List[Dict[str, Any]]  # 引用信息
+    hallucination_detected: bool = False
+    hallucination_details: List[str] = None
+    metadata: Dict[str, Any] = None
 
 
-class OpenAIClient:
-    """OpenAI客户端封装"""
+@dataclass
+class Citation:
+    """引用信息"""
+    text: str  # 引用的原文
+    source: str  # 来源文档
+    chunk_id: str
+    relevance_score: float
+    start_pos: int = 0
+    end_pos: int = 0
+
+
+class BaseLLM(ABC):
+    """LLM基类"""
     
-    def __init__(self):
-        self.client = openai.AsyncOpenAI(
-            api_key=settings.OPENAI_API_KEY,
-            timeout=60.0
-        )
-        self.model = settings.LLM_MODEL
-    
-    @retry(
-        retry=retry_if_exception_type((
-            openai.RateLimitError,
-            openai.APITimeoutError,
-            openai.APIConnectionError
-        )),
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=10)
-    )
-    async def generate(
+    @abstractmethod
+    def generate(
         self,
         prompt: str,
-        temperature: float = 0.7,
-        max_tokens: int = 1000,
-        stream: bool = False
-    ) -> LLMResponse:
+        max_tokens: int = 512,
+        temperature: float = 0.7
+    ) -> str:
         """生成文本"""
-        start_time = time.time()
-        
-        try:
-            if stream:
-                return await self._generate_stream(prompt, temperature, max_tokens)
-            
-            response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": "你是一个有帮助的助手。"},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=temperature,
-                max_tokens=max_tokens
-            )
-            
-            latency = (time.time() - start_time) * 1000
-            
-            return LLMResponse(
-                content=response.choices[0].message.content,
-                provider="openai",
-                model=self.model,
-                tokens_prompt=response.usage.prompt_tokens,
-                tokens_completion=response.usage.completion_tokens,
-                latency_ms=latency,
-                finish_reason=response.choices[0].finish_reason
-            )
-            
-        except Exception as e:
-            logger.error(f"OpenAI generation failed: {e}")
-            raise
+        pass
     
-    async def _generate_stream(
+    @abstractmethod
+    def generate_stream(
         self,
         prompt: str,
-        temperature: float,
-        max_tokens: int
-    ) -> LLMResponse:
+        max_tokens: int = 512,
+        temperature: float = 0.7
+    ) -> Generator[str, None, None]:
         """流式生成"""
-        start_time = time.time()
-        content_parts = []
+        pass
+
+
+class LocalLLM(BaseLLM):
+    """
+    本地LLM (transformers)
+    
+    使用示例:
+        llm = LocalLLM("Qwen/Qwen2-1.5B-Instruct")
+        response = llm.generate("你好")
+    """
+    
+    def __init__(
+        self,
+        model_name: str = "Qwen/Qwen2-1.5B-Instruct",
+        device: str = "auto",
+        load_in_8bit: bool = False
+    ):
+        if not TRANSFORMERS_AVAILABLE:
+            raise ImportError("transformers required. Install: pip install transformers torch")
         
-        stream = await self.client.chat.completions.create(
-            model=self.model,
-            messages=[
-                {"role": "system", "content": "你是一个有帮助的助手。"},
-                {"role": "user", "content": prompt}
-            ],
+        self.model_name = model_name
+        self.device = device if device != "auto" else ("cuda" if torch.cuda.is_available() else "cpu")
+        self.load_in_8bit = load_in_8bit
+        
+        self._tokenizer = None
+        self._model = None
+        self._loaded = False
+    
+    def _load_model(self):
+        """加载模型"""
+        if self._loaded:
+            return
+        
+        logger.info(f"Loading model: {self.model_name}")
+        
+        self._tokenizer = AutoTokenizer.from_pretrained(
+            self.model_name,
+            trust_remote_code=True
+        )
+        
+        load_kwargs = {
+            "trust_remote_code": True,
+            "torch_dtype": torch.float16 if self.device == "cuda" else torch.float32,
+        }
+        
+        if self.load_in_8bit and self.device == "cuda":
+            load_kwargs["load_in_8bit"] = True
+        else:
+            load_kwargs["device_map"] = "auto" if self.device == "cuda" else None
+        
+        self._model = AutoModelForCausalLM.from_pretrained(
+            self.model_name,
+            **load_kwargs
+        )
+        
+        if not self.load_in_8bit and self.device == "cpu":
+            self._model = self._model.to(self.device)
+        
+        self._loaded = True
+        logger.info(f"Model loaded on {self.device}")
+    
+    def _build_prompt(self, messages: List[Dict[str, str]]) -> str:
+        """构建对话prompt"""
+        if "Qwen" in self.model_name:
+            # Qwen chat template
+            return self._tokenizer.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=True
+            )
+        else:
+            # 通用模板
+            prompt = ""
+            for msg in messages:
+                role = msg.get("role", "user")
+                content = msg.get("content", "")
+                if role == "system":
+                    prompt += f"System: {content}\n"
+                elif role == "user":
+                    prompt += f"User: {content}\n"
+                elif role == "assistant":
+                    prompt += f"Assistant: {content}\n"
+            prompt += "Assistant: "
+            return prompt
+    
+    def generate(
+        self,
+        prompt: str,
+        max_tokens: int = 512,
+        temperature: float = 0.7
+    ) -> str:
+        """生成文本"""
+        self._load_model()
+        
+        messages = [{"role": "user", "content": prompt}]
+        formatted_prompt = self._build_prompt(messages)
+        
+        inputs = self._tokenizer(
+            formatted_prompt,
+            return_tensors="pt"
+        ).to(self.device)
+        
+        with torch.no_grad():
+            outputs = self._model.generate(
+                **inputs,
+                max_new_tokens=max_tokens,
+                temperature=temperature,
+                do_sample=temperature > 0,
+                top_p=0.9,
+                pad_token_id=self._tokenizer.eos_token_id
+            )
+        
+        response = self._tokenizer.decode(
+            outputs[0][inputs.input_ids.shape[1]:],
+            skip_special_tokens=True
+        )
+        
+        return response.strip()
+    
+    def generate_stream(
+        self,
+        prompt: str,
+        max_tokens: int = 512,
+        temperature: float = 0.7
+    ) -> Generator[str, None, None]:
+        """流式生成"""
+        self._load_model()
+        
+        messages = [{"role": "user", "content": prompt}]
+        formatted_prompt = self._build_prompt(messages)
+        
+        inputs = self._tokenizer(
+            formatted_prompt,
+            return_tensors="pt"
+        ).to(self.device)
+        
+        streamer = TextIteratorStreamer(
+            self._tokenizer,
+            skip_special_tokens=True
+        )
+        
+        generation_kwargs = dict(
+            **inputs,
+            max_new_tokens=max_tokens,
             temperature=temperature,
+            do_sample=temperature > 0,
+            top_p=0.9,
+            pad_token_id=self._tokenizer.eos_token_id,
+            streamer=streamer
+        )
+        
+        thread = Thread(target=self._model.generate, kwargs=generation_kwargs)
+        thread.start()
+        
+        generated_text = ""
+        for text in streamer:
+            generated_text += text
+            yield text
+
+
+class APILLM(BaseLLM):
+    """
+    API LLM (OpenAI格式)
+    
+    使用示例:
+        llm = APILLM(api_key="sk-...", base_url="https://api.openai.com/v1")
+        response = llm.generate("你好")
+    """
+    
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
+        model: str = "gpt-3.5-turbo"
+    ):
+        if not OPENAI_AVAILABLE:
+            raise ImportError("openai required. Install: pip install openai")
+        
+        self.api_key = api_key or os.getenv("OPENAI_API_KEY")
+        self.base_url = base_url or os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+        self.model = model
+        
+        self._client = openai.OpenAI(
+            api_key=self.api_key,
+            base_url=self.base_url
+        )
+    
+    def generate(
+        self,
+        prompt: str,
+        max_tokens: int = 512,
+        temperature: float = 0.7
+    ) -> str:
+        """生成文本"""
+        response = self._client.chat.completions.create(
+            model=self.model,
+            messages=[{"role": "user", "content": prompt}],
             max_tokens=max_tokens,
+            temperature=temperature
+        )
+        return response.choices[0].message.content
+    
+    def generate_stream(
+        self,
+        prompt: str,
+        max_tokens: int = 512,
+        temperature: float = 0.7
+    ) -> Generator[str, None, None]:
+        """流式生成"""
+        response = self._client.chat.completions.create(
+            model=self.model,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=max_tokens,
+            temperature=temperature,
             stream=True
         )
         
-        async for chunk in stream:
+        for chunk in response:
             if chunk.choices[0].delta.content:
-                content_parts.append(chunk.choices[0].delta.content)
-        
-        latency = (time.time() - start_time) * 1000
-        
-        return LLMResponse(
-            content="".join(content_parts),
-            provider="openai",
-            model=self.model,
-            tokens_prompt=0,  # 流式不返回token数
-            tokens_completion=0,
-            latency_ms=latency
-        )
+                yield chunk.choices[0].delta.content
 
 
-class AnthropicClient:
-    """Anthropic客户端封装"""
-    
-    def __init__(self):
-        self.client = anthropic.AsyncAnthropic(
-            api_key=settings.ANTHROPIC_API_KEY
-        )
-        self.model = "claude-3-sonnet-20240229"
-    
-    @retry(
-        retry=retry_if_exception_type((
-            anthropic.RateLimitError,
-            anthropic.APITimeoutError
-        )),
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=10)
-    )
-    async def generate(
-        self,
-        prompt: str,
-        temperature: float = 0.7,
-        max_tokens: int = 1000,
-        stream: bool = False
-    ) -> LLMResponse:
-        """生成文本"""
-        start_time = time.time()
-        
-        try:
-            response = await self.client.messages.create(
-                model=self.model,
-                max_tokens=max_tokens,
-                temperature=temperature,
-                messages=[{"role": "user", "content": prompt}]
-            )
-            
-            latency = (time.time() - start_time) * 1000
-            
-            return LLMResponse(
-                content=response.content[0].text,
-                provider="anthropic",
-                model=self.model,
-                tokens_prompt=response.usage.input_tokens,
-                tokens_completion=response.usage.output_tokens,
-                latency_ms=latency
-            )
-            
-        except Exception as e:
-            logger.error(f"Anthropic generation failed: {e}")
-            raise
-
-
-class LLMService:
+class RAGGenerator:
     """
-    LLM服务
+    RAG生成器
     
-    特性：
-    - 多提供商支持（OpenAI/Anthropic）
-    - 自动降级（主失败切换到备用）
-    - 流式输出
-    - Token消耗统计
+    整合检索和生成，支持引用溯源
     """
     
-    def __init__(self):
-        self.clients: Dict[str, Any] = {}
-        self.primary_provider = LLMProvider.OPENAI
-        
-        # 初始化客户端
-        if settings.OPENAI_API_KEY:
-            self.clients[LLMProvider.OPENAI.value] = OpenAIClient()
-            logger.info("OpenAI client initialized")
-        
-        if settings.ANTHROPIC_API_KEY:
-            self.clients[LLMProvider.ANTHROPIC.value] = AnthropicClient()
-            logger.info("Anthropic client initialized")
-        
-        if not self.clients:
-            logger.warning("No LLM clients configured. Using mock mode.")
-    
-    async def generate(
+    def __init__(
         self,
-        prompt: str,
-        temperature: float = 0.7,
-        max_tokens: int = 1000,
-        stream: bool = False,
-        fallback: bool = True
+        llm: BaseLLM,
+        retriever=None,
+        enable_citation: bool = True,
+        enable_hallucination_check: bool = True
+    ):
+        self.llm = llm
+        self.retriever = retriever
+        self.enable_citation = enable_citation
+        self.enable_hallucination_check = enable_hallucination_check
+    
+    def generate(
+        self,
+        query: str,
+        context_docs: List[Dict[str, Any]] = None,
+        retrieve_top_k: int = 5
     ) -> LLMResponse:
         """
-        生成文本
+        生成回答
         
         Args:
-            prompt: 输入提示
-            temperature: 温度
-            max_tokens: 最大token数
-            stream: 是否流式
-            fallback: 失败时是否降级
+            query: 用户查询
+            context_docs: 上下文文档（可选，不提供则自动检索）
+            retrieve_top_k: 检索数量
         """
-        providers = list(self.clients.keys())
+        # 1. 检索（如果需要）
+        if context_docs is None and self.retriever:
+            # 需要实现检索逻辑
+            context_docs = []
         
-        if not providers:
-            # Mock模式
-            return LLMResponse(
-                content="[MOCK] " + prompt[:100] + "...",
-                provider="mock",
-                model="mock",
-                tokens_prompt=0,
-                tokens_completion=0,
-                latency_ms=0
+        context_docs = context_docs or []
+        
+        # 2. 构建prompt
+        prompt = self._build_rag_prompt(query, context_docs)
+        
+        # 3. 生成
+        content = self.llm.generate(prompt)
+        
+        # 4. 提取引用
+        citations = []
+        if self.enable_citation and context_docs:
+            citations = self._extract_citations(content, context_docs)
+        
+        # 5. 幻觉检测
+        hallucination_detected = False
+        hallucination_details = []
+        if self.enable_hallucination_check:
+            hallucination_detected, hallucination_details = self._check_hallucination(
+                content, context_docs
             )
         
-        # 优先使用主提供商
-        provider_order = [self.primary_provider.value] + [
-            p for p in providers if p != self.primary_provider.value
+        return LLMResponse(
+            content=content,
+            citations=citations,
+            hallucination_detected=hallucination_detected,
+            hallucination_details=hallucination_details,
+            metadata={
+                "query": query,
+                "context_count": len(context_docs),
+                "prompt_length": len(prompt)
+            }
+        )
+    
+    def _build_rag_prompt(
+        self,
+        query: str,
+        context_docs: List[Dict[str, Any]]
+    ) -> str:
+        """构建RAG prompt"""
+        # 构建上下文
+        context_text = ""
+        for i, doc in enumerate(context_docs, 1):
+            context_text += f"\n[{i}] {doc.get('text', '')}\n"
+        
+        prompt = f"""基于以下参考资料回答问题。
+
+参考资料:
+{context_text}
+
+问题: {query}
+
+请根据参考资料回答，并在回答中标注引用来源（如[1]、[2]）。如果参考资料中没有相关信息，请明确说明"根据提供的资料无法回答"。
+
+回答:"""
+        
+        return prompt
+    
+    def _extract_citations(
+        self,
+        content: str,
+        context_docs: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """提取引用"""
+        citations = []
+        
+        # 查找 [数字] 格式的引用
+        citation_pattern = r'\[(\d+)\]'
+        matches = re.finditer(citation_pattern, content)
+        
+        for match in matches:
+            idx = int(match.group(1)) - 1
+            if 0 <= idx < len(context_docs):
+                doc = context_docs[idx]
+                citations.append({
+                    "index": idx + 1,
+                    "text": doc.get('text', '')[:200] + "...",
+                    "source": doc.get('metadata', {}).get('source', 'unknown'),
+                    "chunk_id": doc.get('id', 'unknown')
+                })
+        
+        return citations
+    
+    def _check_hallucination(
+        self,
+        content: str,
+        context_docs: List[Dict[str, Any]]
+    ) -> tuple[bool, List[str]]:
+        """
+        幻觉检测
+        
+        简单实现：检查关键信息是否在上下文中有支持
+        """
+        hallucination_details = []
+        
+        # 合并所有上下文
+        all_context = " ".join([d.get('text', '') for d in context_docs]).lower()
+        
+        # 提取回答中的关键短语（简单规则：提取引号内容、数字、专有名词）
+        # 这里使用简化检查
+        suspicious_patterns = [
+            r'根据我的经验',
+            r'我认为',
+            r'我觉得',
+            r'据我所知',
+            r'可能',
+            r'也许',
+            r'猜测'
         ]
         
-        last_error = None
+        for pattern in suspicious_patterns:
+            if re.search(pattern, content, re.IGNORECASE):
+                hallucination_details.append(f"发现主观表述: {pattern}")
         
-        for provider in provider_order:
-            client = self.clients.get(provider)
-            if not client:
-                continue
-            
-            try:
-                logger.debug(f"Trying LLM provider: {provider}")
-                response = await client.generate(
-                    prompt, temperature, max_tokens, stream
-                )
-                
-                # 记录指标
-                metrics.generation_latency.observe(response.latency_ms / 1000)
-                
-                logger.info(
-                    f"LLM generation completed: "
-                    f"provider={provider}, "
-                    f"latency={response.latency_ms:.0f}ms, "
-                    f"tokens={response.tokens_prompt + response.tokens_completion}"
-                )
-                
-                return response
-                
-            except Exception as e:
-                last_error = e
-                logger.warning(f"Provider {provider} failed: {e}")
-                
-                if not fallback:
-                    break
+        # 检查是否有明确声明无法回答
+        if "无法回答" in content or "无法找到" in content:
+            pass  # 这是诚实的
         
-        # 全部失败
-        logger.error(f"All LLM providers failed: {last_error}")
-        raise last_error
+        return len(hallucination_details) > 0, hallucination_details
+
+
+# 便捷函数
+def get_llm(
+    llm_type: str = "local",
+    model_name: str = None,
+    api_key: str = None
+) -> BaseLLM:
+    """
+    获取LLM实例
     
-    async def generate_stream(
-        self,
-        prompt: str,
-        temperature: float = 0.7,
-        max_tokens: int = 1000
-    ) -> AsyncGenerator[str, None]:
-        """流式生成"""
-        # 简化实现：直接生成后分段yield
-        response = await self.generate(
-            prompt, temperature, max_tokens, stream=False
-        )
-        
-        # 模拟流式输出
-        words = response.content.split()
-        for word in words:
-            yield word + " "
-            await asyncio.sleep(0.01)
-
-
-# 全局实例
-_llm_service: Optional[LLMService] = None
-
-
-def get_llm_service() -> LLMService:
-    """获取全局LLM服务"""
-    global _llm_service
-    if _llm_service is None:
-        _llm_service = LLMService()
-    return _llm_service
+    Args:
+        llm_type: 'local' 或 'api'
+        model_name: 模型名称
+        api_key: API密钥（API类型需要）
+    """
+    if llm_type == "local":
+        model = model_name or "Qwen/Qwen2-1.5B-Instruct"
+        return LocalLLM(model)
+    elif llm_type == "api":
+        model = model_name or "gpt-3.5-turbo"
+        return APILLM(api_key=api_key, model=model)
+    else:
+        raise ValueError(f"Unknown LLM type: {llm_type}")
