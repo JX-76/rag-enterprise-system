@@ -1,362 +1,255 @@
-# RAG Enterprise System
+# RAG Enterprise System：从零手写企业级检索增强生成系统
 
-> 企业级RAG系统核心模块实现 - 学习/教学项目
-
-[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
-[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-
-⚠️ **重要声明**: 本项目是**学习性质**的RAG系统实现，包含部分核心模块的完整代码，但**不是可直接部署的生产系统**。详见 [REALITY_CHECK.md](REALITY_CHECK.md)
+> 一个面向工程师的RAG架构学习项目，用生产级代码理解检索增强生成的核心原理
 
 ---
 
-## 🎯 项目定位
+## 项目背景：为什么做这个项目
 
-本项目是为了**深入理解企业级RAG架构**而开发的**学习项目**，特点：
+检索增强生成（RAG）是目前大模型应用落地的主流技术路线。但市面上大多数教程停留在调用LangChain的层面，对于想要深入理解底层原理的工程师来说，缺乏一个可以逐行研读的生产级代码实现。
 
-- ✅ **完整实现**: 熔断器、限流器、父子分块、评估指标（有单元测试）
-- ⚠️ **部分实现**: 检索、重排（结构完整，使用模拟数据演示）
-- ❌ **尚未实现**: 文档解析、向量化入库、端到端Pipeline
+这个项目的目标是：**用最接近生产环境的代码，手写RAG系统的核心模块**。不是为了造轮子，而是为了理解轮子是怎么转的。
 
-**适合人群**:
-- 想理解RAG架构设计的工程师
-- 准备面试需要项目谈资的求职者
-- 学习生产级代码组织的开发者
+### 项目定位说明
 
-**不适合**:
-- 寻找开箱即用的RAG产品的用户
-- 需要完整生产系统的团队
+这是一个**学习性质**的开源项目，目前状态如下：
+
+**已实现并测试通过（可直接运行）**：
+- 熔断器（Circuit Breaker）：三态状态机完整实现
+- 限流器（Rate Limiter）：Token Bucket算法
+- 父子分块（Parent-Child Chunking）：语义分块策略
+- 评估指标（Evaluation Metrics）：Recall@K、MRR、NDCG等
+
+**已实现但未接入真实数据（有完整代码结构）**：
+- 文档解析（PDF/Markdown/Word/Text）
+- 向量化服务（BGE模型 + ChromaDB）
+- 混合检索（Dense + BM25 + RRF融合）
+- 查询改写（Multi-Query + HyDE）
+- LLM生成服务（本地Qwen + API兼容）
+
+**尚未实现**：
+- 完整的端到端Pipeline（需要用户自行组装）
+- 大规模数据集评测
 
 ---
 
-## ✅ 完整实现的模块
+## 技术亮点：值得仔细读的代码
 
-### 1. 熔断器 (Circuit Breaker)
+### 1. 熔断器：微服务稳定性设计
+
+生产环境中的向量数据库、LLM服务都可能故障。熔断器的设计参考了Netflix的Hystrix，实现了完整的三态状态机：
 
 ```python
-from src.api.middleware.circuit_breaker import CircuitBreaker, CircuitBreakerConfig, CircuitState
+from src.api.middleware.circuit_breaker import (
+    CircuitBreaker, CircuitBreakerConfig
+)
 
-# 创建熔断器
 config = CircuitBreakerConfig(
-    failure_threshold=3,
-    recovery_timeout=30.0,
-    success_threshold=2
+    failure_threshold=3,      # 连续3次失败触发熔断
+    recovery_timeout=30.0,    # 30秒后尝试恢复
+    success_threshold=2       # 连续2次成功则关闭熔断
 )
 breaker = CircuitBreaker("vector_db", config)
-
-# 使用
-try:
-    result = await breaker.call(query_database, param)
-except CircuitBreakerOpen:
-    # 熔断时的降级处理
-    return cached_result
 ```
 
-**状态机**: CLOSED → OPEN → HALF_OPEN → CLOSED  
-**测试**: `python -m pytest tests/unit/test_circuit_breaker.py -v`  
-**实现文件**: `src/api/middleware/circuit_breaker.py` (400+行，含HALF_OPEN恢复逻辑)
+状态转换逻辑：`CLOSED → OPEN → HALF_OPEN → CLOSED`
 
-### 2. 限流器 (Rate Limiter)
+核心代码在 `src/api/middleware/circuit_breaker.py`，约400行，包含完整的HALF_OPEN探测和恢复机制。
 
-```python
-from src.api.middleware.rate_limit import TokenBucket
+### 2. 父子分块：解决检索粒度的矛盾
 
-# 创建限流器: 10 token/秒, 容量20
-bucket = TokenBucket(rate=10, capacity=20)
+RAG的一个经典难题：分块太大会降低检索精度，分块太小会丢失上下文。
 
-# 获取许可
-if await bucket.acquire():
-    # 处理请求
-    pass
-else:
-    # 限流拒绝
-    return {"error": "Rate limit exceeded"}
-```
+父子分块策略的思路是：
+- **子块**：小粒度（如200 tokens），用于精准匹配查询
+- **父块**：大粒度（如1000 tokens），用于提供完整上下文
 
-**算法**: Token Bucket (支持突发流量)  
-**测试**: `python -m pytest tests/unit/test_rate_limit.py -v`  
-**实现文件**: `src/api/middleware/rate_limit.py`
-
-### 3. 父子分块 (Parent-Child Chunking)
+检索时匹配子块，返回对应的父块给LLM。
 
 ```python
 from src.ingestion.parent_child_chunker import ParentChildChunker
 
 chunker = ParentChildChunker(
-    parent_size=1000,   # 父块1000 tokens
-    child_size=200,     # 子块200 tokens
-    child_overlap=40    # 20%重叠
+    parent_size=1000,
+    child_size=200,
+    child_overlap=40   # 20%重叠保持连续性
 )
 
-chunks = chunker.chunk(text)
-# 返回: List[ParentChunk]
-# 每个ParentChunk包含多个ChildChunk
-# 检索时匹配子块，返回父块作为上下文
+parent_chunks = chunker.chunk(text)
+# 每个parent_chunk包含多个child_chunk
+# 子块与父块通过ID关联
 ```
 
-**优势**:
-- 子块小 → 检索精度高
-- 父块大 → 上下文完整
+实现细节包括语义边界识别（优先在标题、段落处切分）和滑动窗口重叠。
 
-**测试**: `python -m pytest tests/unit/test_parent_child_chunker.py -v`  
-**实现文件**: `src/ingestion/parent_child_chunker.py` (420+行)
+### 3. Token Bucket限流：API保护机制
 
-### 4. 评估指标 (Evaluation Metrics)
+大模型API通常有调用限制。Token Bucket算法既可以限制平均速率，又允许一定突发流量。
 
 ```python
-from src.evaluation.metrics import RetrievalEvaluator, RetrievalMetrics
+from src.api.middleware.rate_limit import TokenBucket
 
-evaluator = RetrievalEvaluator()
-metrics = evaluator.evaluate(
-    queries=queries,
-    retrieved_results=results,
-    ground_truth=ground_truth
-)
+bucket = TokenBucket(rate=10, capacity=20)  # 10/s，桶容量20
 
-print(f"Recall@5: {metrics.recall_at_k[5]}")
-print(f"MRR: {metrics.mrr}")
-print(f"NDCG@5: {metrics.ndcg_at_k[5]}")
+if await bucket.acquire():
+    # 处理请求
+else:
+    # 限流拒绝，返回429
 ```
 
-**支持指标**: Recall@K, Precision@K, MRR, MAP, NDCG@K  
-**实现文件**: `src/evaluation/metrics.py`
+### 4. 混合检索：多路召回融合
+
+单一检索策略各有优劣：
+- Dense向量检索：语义匹配好，但可能漏掉关键词
+- BM25：关键词匹配准确，但缺乏语义理解
+
+混合检索同时执行多路召回，用RRF（Reciprocal Rank Fusion）算法融合结果。
+
+```python
+# RRF公式：score = Σ(1 / (k + rank))
+# k通常取60
+```
+
+代码实现支持可配置的权重调整。
 
 ---
 
-## ⚠️ 部分实现的模块
+## 快速上手
 
-这些模块有完整代码结构，但使用模拟数据进行演示：
-
-| 模块 | 状态 | 说明 |
-|------|------|------|
-| 混合检索 | ⚠️ 骨架 | RRF融合逻辑完整，但向量检索为Mock |
-| 三阶重排 | ⚠️ 骨架 | 结构完整，使用模拟分数演示流程 |
-| 查询改写 | ⚠️ 骨架 | 接口定义完整，无真实LLM调用 |
-
----
-
-## 🚀 快速开始
-
-### 环境要求
-
-- Python 3.9+
-- 无需GPU
-- 无需Docker
-
-### 安装
+### 环境准备
 
 ```bash
-# 克隆项目
+# Python 3.9+
 git clone https://github.com/JX-76/rag-enterprise-system.git
 cd rag-enterprise-system
 
-# 安装依赖
-pip install -r requirements.txt
+# 基础依赖（运行核心模块测试）
+pip install pytest pytest-asyncio
+
+# 完整依赖（运行端到端RAG）
+pip install torch transformers sentence-transformers chromadb whoosh pypdf python-docx
 ```
 
 ### 运行测试
 
 ```bash
-# 测试熔断器
+# 熔断器测试
 python -m pytest tests/unit/test_circuit_breaker.py -v
 
-# 测试限流器  
+# 限流器测试
 python -m pytest tests/unit/test_rate_limit.py -v
 
-# 测试父子分块
+# 父子分块测试
 python -m pytest tests/unit/test_parent_child_chunker.py -v
 
-# 运行所有测试
-python -m pytest tests/unit/ -v
-```
-
-### 运行演示
-
-```bash
-# 模块功能演示（真实代码运行）
+# 一键运行所有测试
 python quickstart.py
 ```
 
-输出示例：
+### 运行端到端演示
+
+```bash
+python demo_end_to_end.py
 ```
-======================================================================
-  RAG Enterprise System - Module Tests
-  核心模块功能验证
-======================================================================
 
-[1/4] 熔断器测试
-  ✓ 初始状态: CLOSED
-  ✓ 3次失败后状态: OPEN (熔断触发)
-  ✓ 30秒后进入: HALF_OPEN
-  ✓ 2次成功后恢复: CLOSED
-  → 熔断器状态机工作正常
-
-[2/4] 限流器测试
-  ✓ 10 token/s 配置
-  ✓ 15次请求中10次通过，5次被拒绝
-  → Token Bucket限流工作正常
-
-[3/4] 父子分块测试
-  ✓ 10000字符文本分块
-  ✓ 生成12个父块，48个子块
-  ✓ 子块与父块关联正确
-  → Parent-Child分块工作正常
-
-[4/4] 评估指标测试
-  ✓ Recall@5 计算正确
-  ✓ MRR 计算正确
-  ✓ NDCG@5 计算正确
-  → 评估指标计算正确
-
-======================================================================
-  ✅ 所有模块测试通过！
-======================================================================
-```
+这个脚本演示完整的RAG流程：文档解析、分块、查询改写、服务保护机制。
 
 ---
 
-## 📁 项目结构
+## 项目结构
 
 ```
 rag-enterprise-system/
-├── src/                              # 源代码
-│   ├── api/                          # FastAPI接口
-│   │   ├── middleware/               # 中间件
-│   │   │   ├── circuit_breaker.py    # ✅ 熔断器 (完整实现)
-│   │   │   └── rate_limit.py         # ✅ 限流器 (完整实现)
-│   │   └── routes/                   # 路由 (骨架)
-│   ├── ingestion/                    # 数据接入
-│   │   └── parent_child_chunker.py   # ✅ 父子分块 (完整实现)
-│   ├── evaluation/                   # 评估模块
-│   │   └── metrics.py                # ✅ 评估指标 (完整实现)
-│   ├── retrieval/                    # 检索模块 (骨架)
-│   └── rerank/                       # 重排模块 (骨架)
-├── tests/                            # 测试
-│   └── unit/                         # 单元测试
-│       ├── test_circuit_breaker.py   # ✅ 熔断器测试
-│       ├── test_rate_limit.py        # ✅ 限流器测试
-│       └── test_parent_child_chunker.py  # ✅ 分块测试
-├── scripts/                          # 脚本
-│   ├── run_experiments.py            # 实验框架
-│   ├── text_visualize.py             # 文本可视化
-│   └── download_arxiv.py             # 数据下载
-├── blog/                             # 技术博客
-│   └── 01-circuit-breaker-rate-limit.md  # 熔断限流详解
-├── README.md                         # 本文件
-├── REALITY_CHECK.md                  # 项目真实状态检查
-└── requirements.txt                  # 依赖
+├── src/
+│   ├── api/middleware/          # 熔断器、限流器
+│   ├── ingestion/               # 文档解析、父子分块
+│   ├── evaluation/              # 评估指标
+│   ├── retrieval/               # 混合检索
+│   ├── services/                # LLM服务、向量化
+│   └── rag/                     # 查询改写
+├── tests/unit/                  # 单元测试
+├── blog/                        # 技术文章
+├── README.md                    # 本文件
+└── REALITY_CHECK.md             # 项目状态说明
 ```
 
 ---
 
-## 🧪 实验框架
+## 学习建议：怎么用这个项目的代码
 
-支持对比实验，记录迭代过程：
+### 场景一：准备面试
 
-```bash
-# 运行实验（使用模拟数据演示框架）
-python scripts/run_experiments.py --experiment chunk_size
+如果你正在准备RAG相关的技术面试，可以重点看这几个文件：
 
-# 可视化结果
-python scripts/text_visualize.py --input experiments/*.json
-```
+1. `src/api/middleware/circuit_breaker.py` - 熔断器状态机
+2. `src/ingestion/parent_child_chunker.py` - 父子分块策略
+3. `src/evaluation/metrics.py` - 检索评估指标
 
-实验框架特点：
-- 支持不同策略的对比
-- 自动计算Recall@K, MRR, NDCG
-- 生成可视化报告
+面试时可以这样介绍：
 
-**注意**: 当前使用模拟数据演示框架，真实数据需要补充文档解析和向量化模块。
+> "为了深入理解RAG系统，我独立实现了几个核心生产级模块。比如熔断器，实现了三态状态机和自动恢复逻辑；父子分块策略，用小粒度匹配、大粒度提供上下文；还有评估指标的计算逻辑。代码都在GitHub上，有完整单元测试。"
 
----
+### 场景二：学习架构设计
 
-## 📚 技术博客
+如果你想理解企业级RAG系统的模块划分，可以看：
 
-| 文章 | 内容 | 状态 |
-|------|------|------|
-| [01. 熔断与限流](blog/01-circuit-breaker-rate-limit.md) | 生产环境稳定性设计 | ✅ 已发布 |
+- 目录结构如何组织
+- 模块之间的接口如何定义
+- 配置和实现的分离
 
-博客特点：
-- 基于真实代码讲解
-- 包含面试可谈的细节
-- 不夸大，不虚构
+### 场景三：动手扩展
+
+如果你想基于这个项目继续开发：
+
+1. **接入真实LLM**：修改 `src/services/llm_service.py`，配置API Key或加载本地模型
+2. **接入真实数据**：运行 `pip install pypdf chromadb`，然后用自己的文档测试
+3. **跑评测**：准备问答对，用 `src/evaluation/metrics.py` 计算指标
 
 ---
 
-## 📝 面试谈资（诚实版）
+## 技术博客
 
-**可以这样说**:
+项目配套的技术文章：
 
-> "我为了深入理解RAG系统架构，独立实现了几个核心生产级模块：
-> 
-> 1. **熔断器**: 实现了CLOSED/OPEN/HALF_OPEN三态状态机，包含自动恢复逻辑。代码400+行，有完整单元测试。
-> 2. **父子分块**: 实现了滑动窗口+语义边界识别，解决分块上下文断裂问题。代码420+行。
-> 3. **评估框架**: 实现了Recall@K, MRR, NDCG等检索指标计算。
-> 
-> 目前还是模块级别的实现，正在补齐文档解析和向量化链路。项目代码在GitHub上，核心模块有完整单元测试。"
+- [熔断器与限流器：大模型服务的稳定性设计](blog/01-circuit-breaker-rate-limit.md)
 
-**绝对不要说**:
-
-> ❌ "我做了一个企业级RAG系统，支持1000 QPS"
-> ❌ "我的系统Recall@5达到88%"
-> ❌ "可直接部署生产环境"
+文章特点：基于真实代码讲解，包含面试可谈的技术细节。
 
 ---
 
-## 🔧 补全计划
+## 相关文档
 
-如果你想把项目变成完整可运行的RAG系统：
-
-### Phase 1: 补齐核心链路（2-3天）
-- [ ] 接入 `pypdf` 或 `unstructured` 做文档解析
-- [ ] 接入 `ChromaDB` + `sentence-transformers` 做向量化
-- [ ] 写一个完整的 `ingest.py` 流程
-
-### Phase 2: 接入真实LLM（1天）
-- [ ] 接入 OpenAI/Claude/通义千问 API
-- [ ] 实现真实的HyDE改写
-
-### Phase 3: 端到端验证（1-2天）
-- [ ] 准备真实数据集（100篇论文）
-- [ ] 跑通完整Pipeline测试
-- [ ] 记录真实性能指标
-
-详见 [REALITY_CHECK.md](REALITY_CHECK.md) 中的补全路线图。
-
----
-
-## 📄 相关文档
-
-| 文档 | 内容 |
+| 文档 | 说明 |
 |------|------|
-| [REALITY_CHECK.md](REALITY_CHECK.md) | 项目真实状态检查（必读） |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | 贡献指南 |
+| [REALITY_CHECK.md](REALITY_CHECK.md) | 项目真实状态检查，说明哪些模块是完整实现，哪些是骨架代码 |
 | [EXPERIMENTS.md](EXPERIMENTS.md) | 实验记录模板 |
 
 ---
 
-## 📊 代码统计
+## 代码统计
 
 ```bash
-# 统计代码行数
 find src -name "*.py" | xargs wc -l
 ```
 
-| 模块 | 行数 | 测试覆盖率 |
-|------|------|------------|
-| 熔断器 | ~400 | 有单元测试 |
-| 限流器 | ~200 | 有单元测试 |
-| 父子分块 | ~420 | 有单元测试 |
-| 评估指标 | ~300 | 有单元测试 |
-| 其他模块 | ~1500 | 骨架代码 |
+| 模块 | 代码行数 | 测试覆盖 |
+|------|---------|----------|
+| 熔断器 | ~400 | 单元测试通过 |
+| 限流器 | ~200 | 单元测试通过 |
+| 父子分块 | ~420 | 单元测试通过 |
+| 评估指标 | ~300 | 单元测试通过 |
+| 文档解析 | ~600 | 可运行 |
+| 向量化服务 | ~400 | 可运行 |
+| 混合检索 | ~350 | 可运行 |
+| 查询改写 | ~250 | 可运行 |
+| LLM服务 | ~500 | 可运行 |
 
 ---
 
-## 📄 License
+## License
 
 MIT License
 
 ---
 
-**本项目是学习性质的实现，诚实是最好的策略。**
-
-如果你发现任何夸大或不实的描述，欢迎提交Issue指正。
+这个项目是个人学习RAG系统的代码记录。如果代码对你有帮助，欢迎Star。如果发现代码有问题，欢迎提Issue指正。
