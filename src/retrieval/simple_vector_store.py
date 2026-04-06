@@ -6,9 +6,9 @@
 """
 import json
 import hashlib
-import numpy as np
+import math
 from typing import List, Dict, Optional, Any, Tuple
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from pathlib import Path
 import pickle
 
@@ -18,14 +18,14 @@ class VectorDocument:
     """向量文档"""
     id: str
     text: str
-    embedding: np.ndarray
+    embedding: List[float]
     metadata: Dict[str, Any]
     
     def to_dict(self) -> Dict[str, Any]:
         return {
             "id": self.id,
             "text": self.text,
-            "embedding": self.embedding.tolist(),
+            "embedding": self.embedding,
             "metadata": self.metadata
         }
     
@@ -34,7 +34,7 @@ class VectorDocument:
         return cls(
             id=data["id"],
             text=data["text"],
-            embedding=np.array(data["embedding"]),
+            embedding=data["embedding"],
             metadata=data["metadata"]
         )
 
@@ -45,8 +45,8 @@ class SimpleVectorStore:
     
     特点：
     - 纯Python实现，零依赖
-    - 内存存储，支持持久化到磁盘
-    - 余弦相似度检索
+    - 基于余弦相似度的向量检索
+    - 支持持久化到磁盘
     - 支持增量更新和去重
     """
     
@@ -67,7 +67,7 @@ class SimpleVectorStore:
     def add_document(
         self,
         text: str,
-        embedding: np.ndarray,
+        embedding: List[float],
         metadata: Optional[Dict[str, Any]] = None,
         doc_id: Optional[str] = None
     ) -> str:
@@ -110,7 +110,7 @@ class SimpleVectorStore:
     def add_documents(
         self,
         texts: List[str],
-        embeddings: List[np.ndarray],
+        embeddings: List[List[float]],
         metadatas: Optional[List[Dict[str, Any]]] = None
     ) -> List[str]:
         """
@@ -139,7 +139,7 @@ class SimpleVectorStore:
     
     def search(
         self,
-        query_embedding: np.ndarray,
+        query_embedding: List[float],
         top_k: int = 10,
         filter_dict: Optional[Dict[str, Any]] = None
     ) -> List[Tuple[VectorDocument, float]]:
@@ -149,7 +149,7 @@ class SimpleVectorStore:
         Args:
             query_embedding: 查询向量
             top_k: 返回结果数
-            filter_dict: 过滤条件，如{"source": "doc1.pdf"}
+            filter_dict: 过滤条件
         
         Returns:
             文档和相似度分数的列表
@@ -198,15 +198,19 @@ class SimpleVectorStore:
         self._docs.clear()
         self._persist()
     
-    def _cosine_similarity(self, a: np.ndarray, b: np.ndarray) -> float:
+    def _cosine_similarity(self, a: List[float], b: List[float]) -> float:
         """计算余弦相似度"""
-        norm_a = np.linalg.norm(a)
-        norm_b = np.linalg.norm(b)
+        if len(a) != len(b):
+            return 0.0
+        
+        dot_product = sum(x * y for x, y in zip(a, b))
+        norm_a = math.sqrt(sum(x * x for x in a))
+        norm_b = math.sqrt(sum(x * x for x in b))
         
         if norm_a == 0 or norm_b == 0:
             return 0.0
         
-        return float(np.dot(a, b) / (norm_a * norm_b))
+        return dot_product / (norm_a * norm_b)
     
     def _persist(self):
         """持久化到磁盘"""
@@ -240,8 +244,5 @@ class SimpleVectorStore:
         return {
             "document_count": len(self._docs),
             "persist_path": self._persist_path,
-            "vector_dim": next(
-                (doc.embedding.shape[0] for doc in self._docs.values()),
-                0
-            ) if self._docs else 0
+            "vector_dim": len(next(iter(self._docs.values())).embedding) if self._docs else 0
         }
