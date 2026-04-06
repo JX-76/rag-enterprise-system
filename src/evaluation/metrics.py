@@ -2,11 +2,19 @@
 RAG Evaluation Metrics - RAG评估指标
 支持检索质量、生成质量、端到端效果评估
 """
-import numpy as np
 from typing import List, Dict, Any, Optional, Set, Tuple
 from dataclasses import dataclass
 from collections import defaultdict
 import re
+import math
+
+# 尝试导入numpy，但不强制依赖
+try:
+    import numpy as np
+    HAS_NUMPY = True
+except ImportError:
+    HAS_NUMPY = False
+    np = None
 
 
 @dataclass
@@ -93,12 +101,20 @@ class RetrievalEvaluator:
             ap = self._compute_ap(retrieved_ids, relevant)
             average_precisions.append(ap)
         
+        # 兼容无numpy环境
+        def safe_mean(values):
+            if not values:
+                return 0.0
+            if HAS_NUMPY:
+                return float(np.mean(values))
+            return sum(values) / len(values)
+        
         return RetrievalMetrics(
-            recall_at_k={k: np.mean(v) for k, v in recall_at_k.items()},
-            precision_at_k={k: np.mean(v) for k, v in precision_at_k.items()},
-            ndcg_at_k={k: np.mean(v) for k, v in ndcg_at_k.items()},
-            mrr=np.mean(reciprocal_ranks),
-            map_score=np.mean(average_precisions)
+            recall_at_k={k: safe_mean(v) for k, v in recall_at_k.items()},
+            precision_at_k={k: safe_mean(v) for k, v in precision_at_k.items()},
+            ndcg_at_k={k: safe_mean(v) for k, v in ndcg_at_k.items()},
+            mrr=safe_mean(reciprocal_ranks),
+            map_score=safe_mean(average_precisions)
         )
     
     def _compute_ndcg(self, retrieved: List[str], relevant: Set[str]) -> float:
@@ -106,15 +122,21 @@ class RetrievalEvaluator:
         if not relevant:
             return 0.0
         
+        # 兼容无numpy环境
+        def log2(x):
+            if HAS_NUMPY:
+                return np.log2(x)
+            return math.log2(x)
+        
         # DCG
         dcg = 0.0
         for i, doc_id in enumerate(retrieved):
             if doc_id in relevant:
-                dcg += 1.0 / np.log2(i + 2)  # +2 because i starts at 0
+                dcg += 1.0 / log2(i + 2)  # +2 because i starts at 0
         
         # IDCG
         ideal_len = min(len(relevant), len(retrieved))
-        idcg = sum(1.0 / np.log2(i + 2) for i in range(ideal_len))
+        idcg = sum(1.0 / log2(i + 2) for i in range(ideal_len))
         
         return dcg / idcg if idcg > 0 else 0.0
     

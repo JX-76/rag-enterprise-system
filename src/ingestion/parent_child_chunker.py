@@ -8,9 +8,13 @@ from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional, Tuple
 from pathlib import Path
 
-from src.core.logging import get_logger
-
-logger = get_logger(__name__)
+# 简单的日志实现
+try:
+    from src.core.logging import get_logger
+    logger = get_logger(__name__)
+except ImportError:
+    import logging
+    logger = logging.getLogger(__name__)
 
 
 @dataclass

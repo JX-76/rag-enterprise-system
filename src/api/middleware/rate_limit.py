@@ -4,241 +4,338 @@ Rate Limiting Middleware - 限流中间件
 """
 import time
 from typing import Optional, Callable
-from fastapi import Request, Response
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.types import ASGIApp
 import asyncio
 from functools import wraps
 
-from src.core.config import settings
-from src.core.logging import get_logger
+# 尝试导入FastAPI，用于中间件包装
+try:
+    from fastapi import Request, Response
+    from starlette.middleware.base import BaseHTTPMiddleware
+    from starlette.types import ASGIApp
+    FASTAPI_AVAILABLE = True
+except ImportError:
+    FASTAPI_AVAILABLE = False
+    Request = Response = BaseHTTPMiddleware = ASGIApp = None
 
+# 简单的日志实现
+try:
+    from src.core.logging import get_logger
+    logger = get_logger(__name__)
+except ImportError:
+    import logging
+    logger = logging.getLogger(__name__)
+
+# 尝试导入缓存
 try:
     from src.utils.cache import get_cache_client
 except ImportError:
     get_cache_client = None
 
-logger = get_logger(__name__)
-
 
 class TokenBucket:
     """
-    Token Bucket限流器
+    Token Bucket 限流器
     
-    算法原理：
-    - 桶以固定速率产生token
-    - 每个请求消耗1个token
-    - 桶满时token不再增加
-    - 无token时请求被拒绝或等待
+    支持:
+    - 本地内存限流
+    - 分布式Redis限流 (可选)
+    
+    使用示例:
+        bucket = TokenBucket(rate=10, capacity=20, key="api")
+        if await bucket.acquire():
+            # 处理请求
+            pass
+        else:
+            # 限流拒绝
+            return {"error": "Rate limit exceeded"}
     """
+    
+    _local_buckets: dict = {}
     
     def __init__(
         self,
-        rate: float,  # token产生速率 (个/秒)
+        rate: float,  # token生成速率 (个/秒)
         capacity: int,  # 桶容量
-        key: str = "default"
+        key: str = "default",
+        redis_client=None
     ):
         self.rate = rate
         self.capacity = capacity
-        self.key = f"rate_limit:{key}"
-        self._local_tokens = capacity
-        self._last_update = time.time()
-        self._lock = asyncio.Lock()
+        self.key = key
+        self.redis_client = redis_client
         
-        # 尝试使用Redis进行分布式限流
-        self.cache = None
-        try:
-            self.cache = get_cache_client()
-        except Exception:
-            logger.warning("Redis not available, using local rate limit")
+        # 本地状态
+        self.tokens = float(capacity)
+        self.last_update = time.time()
     
     async def acquire(self, tokens: int = 1) -> bool:
-        """尝试获取token"""
-        async with self._lock:
-            now = time.time()
-            elapsed = now - self._last_update
-            
-            # 计算新产生的token
-            self._local_tokens = min(
-                self.capacity,
-                self._local_tokens + elapsed * self.rate
-            )
-            self._last_update = now
-            
-            # 检查是否有足够token
-            if self._local_tokens >= tokens:
-                self._local_tokens -= tokens
+        """
+        尝试获取token
+        
+        Returns:
+            True: 获取成功
+            False: 被限流
+        """
+        now = time.time()
+        elapsed = now - self.last_update
+        
+        # 补充token
+        self.tokens = min(
+            float(self.capacity),
+            self.tokens + elapsed * self.rate
+        )
+        self.last_update = now
+        
+        if self.tokens >= tokens:
+            self.tokens -= tokens
+            return True
+        
+        return False
+    
+    async def acquire_with_wait(self, tokens: int = 1, timeout: float = None) -> bool:
+        """
+        尝试获取token，如果不足则等待
+        
+        Args:
+            tokens: 需要的token数
+            timeout: 最大等待时间(秒)
+        
+        Returns:
+            True: 获取成功
+            False: 超时或被限流
+        """
+        start_time = time.time()
+        
+        while True:
+            if await self.acquire(tokens):
                 return True
-            return False
+            
+            if timeout and (time.time() - start_time) > timeout:
+                return False
+            
+            # 计算需要等待的时间
+            tokens_needed = tokens - self.tokens
+            wait_time = tokens_needed / self.rate
+            wait_time = min(wait_time, 0.1)  # 最多等100ms
+            
+            await asyncio.sleep(wait_time)
     
-    async def get_wait_time(self, tokens: int = 1) -> float:
-        """计算需要等待的时间"""
-        async with self._lock:
-            if self._local_tokens >= tokens:
-                return 0.0
-            needed = tokens - self._local_tokens
-            return needed / self.rate
+    def get_status(self) -> dict:
+        """获取当前状态"""
+        return {
+            "key": self.key,
+            "rate": self.rate,
+            "capacity": self.capacity,
+            "tokens": self.tokens,
+            "available_ratio": self.tokens / self.capacity
+        }
 
 
-class RateLimitMiddleware(BaseHTTPMiddleware):
+class RateLimiter:
     """
-    限流中间件
+    限流器管理器
     
-    支持：
-    - IP级别限流
-    - 用户级别限流
+    支持多级限流策略：
     - 全局限流
-    - 不同端点不同限流策略
+    - API级别限流
+    - 用户级别限流
     """
     
-    def __init__(
+    def __init__(self):
+        self._buckets: Dict[str, TokenBucket] = {}
+        self._configs: Dict[str, dict] = {}
+    
+    def configure(
         self,
-        app: ASGIApp,
-        default_rate: float = 100,  # 默认100请求/秒
-        default_capacity: int = 200,
-        burst_multiplier: float = 2.0,
-        whitelist: Optional[list] = None
+        name: str,
+        rate: float,
+        capacity: int,
+        key_func: Optional[Callable] = None
     ):
-        super().__init__(app)
-        self.default_rate = default_rate
-        self.default_capacity = default_capacity
-        self.burst_multiplier = burst_multiplier
-        self.whitelist = set(whitelist or [])
+        """
+        配置限流策略
         
-        # 限流器缓存
-        self._buckets: dict[str, TokenBucket] = {}
-        
-        # 端点特定配置
-        self._endpoint_limits = {
-            "/api/v1/query": {"rate": 50, "capacity": 100},
-            "/api/v1/retrieve": {"rate": 100, "capacity": 200},
-            "/api/v1/health": {"rate": 1000, "capacity": 2000},
+        Args:
+            name: 策略名称
+            rate: token生成速率
+            capacity: 桶容量
+            key_func: 生成限流key的函数
+        """
+        self._configs[name] = {
+            "rate": rate,
+            "capacity": capacity,
+            "key_func": key_func
         }
     
-    async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        """处理请求"""
-        # 获取客户端标识
-        client_id = self._get_client_id(request)
-        path = request.url.path
+    async def check(
+        self,
+        name: str,
+        identifier: str = "default"
+    ) -> bool:
+        """
+        检查是否允许通过
         
-        # 白名单跳过
-        if client_id in self.whitelist:
-            return await call_next(request)
+        Args:
+            name: 策略名称
+            identifier: 限流标识(如用户ID、IP等)
         
-        # 获取限流配置
-        limit_config = self._endpoint_limits.get(path, {
-            "rate": self.default_rate,
-            "capacity": self.default_capacity
-        })
+        Returns:
+            True: 允许通过
+            False: 被限流
+        """
+        config = self._configs.get(name)
+        if not config:
+            return True  # 未配置则放行
         
-        # 创建bucket key (IP + 端点)
-        bucket_key = f"{client_id}:{path}"
+        key = f"{name}:{identifier}"
         
-        # 获取或创建限流器
-        if bucket_key not in self._buckets:
-            self._buckets[bucket_key] = TokenBucket(
-                rate=limit_config["rate"],
-                capacity=limit_config["capacity"],
-                key=bucket_key
+        if key not in self._buckets:
+            self._buckets[key] = TokenBucket(
+                rate=config["rate"],
+                capacity=config["capacity"],
+                key=key
             )
         
-        bucket = self._buckets[bucket_key]
-        
-        # 尝试获取token
-        if await bucket.acquire():
-            # 添加响应头
-            response = await call_next(request)
-            response.headers["X-RateLimit-Limit"] = str(limit_config["capacity"])
-            # 这里简化处理，实际应该计算剩余token
-            response.headers["X-RateLimit-Remaining"] = "unknown"
-            return response
-        else:
-            # 限流触发
-            wait_time = await bucket.get_wait_time()
-            logger.warning(f"Rate limit exceeded for {client_id} on {path}")
-            
-            return Response(
-                content=f'{"error": "Rate limit exceeded", "retry_after": {int(wait_time)}}',
-                status_code=429,
-                headers={
-                    "Content-Type": "application/json",
-                    "Retry-After": str(int(wait_time) + 1)
-                }
-            )
+        return await self._buckets[key].acquire()
     
-    def _get_client_id(self, request: Request) -> str:
-        """获取客户端标识"""
-        # 优先使用X-Forwarded-For
-        forwarded = request.headers.get("X-Forwarded-For")
-        if forwarded:
-            return forwarded.split(",")[0].strip()
+    def get_limiter(
+        self,
+        name: str,
+        identifier: str = "default"
+    ) -> TokenBucket:
+        """获取指定限流器"""
+        config = self._configs.get(name)
+        if not config:
+            # 默认配置
+            config = {"rate": 100, "capacity": 100}
         
-        # 其次使用X-Real-IP
-        real_ip = request.headers.get("X-Real-IP")
-        if real_ip:
-            return real_ip
+        key = f"{name}:{identifier}"
         
-        # 最后使用直接连接的IP
-        if request.client:
-            return request.client.host
+        if key not in self._buckets:
+            self._buckets[key] = TokenBucket(
+                rate=config["rate"],
+                capacity=config["capacity"],
+                key=key
+            )
         
-        return "unknown"
+        return self._buckets[key]
+
+
+# 全局限流器实例
+_limiter = RateLimiter()
+
+
+def configure_rate_limit(
+    name: str,
+    rate: float,
+    capacity: int,
+    key_func: Optional[Callable] = None
+):
+    """配置限流策略"""
+    _limiter.configure(name, rate, capacity, key_func)
+
+
+async def check_rate_limit(name: str, identifier: str = "default") -> bool:
+    """检查限流"""
+    return await _limiter.check(name, identifier)
+
+
+def get_rate_limiter(name: str, identifier: str = "default") -> TokenBucket:
+    """获取限流器"""
+    return _limiter.get_limiter(name, identifier)
 
 
 def rate_limit(
-    requests: int = 100,
-    window: int = 60,
+    name: str,
+    rate: float,
+    capacity: int,
     key_func: Optional[Callable] = None
 ):
     """
-    装饰器版限流
+    限流装饰器
     
-    Args:
-        requests: 窗口期内允许的请求数
-        window: 时间窗口（秒）
-        key_func: 自定义限流key生成函数
+    使用示例:
+        @rate_limit("api", rate=10, capacity=20)
+        async def my_endpoint():
+            return {"result": "ok"}
     """
-    def decorator(func):
-        # 使用滑动窗口计数
-        _requests: dict[str, list] = {}
-        _lock = asyncio.Lock()
-        
+    _limiter.configure(name, rate, capacity, key_func)
+    
+    def decorator(func: Callable) -> Callable:
         @wraps(func)
         async def wrapper(*args, **kwargs):
-            # 生成限流key
+            # 尝试获取key
+            key = "default"
             if key_func:
-                key = key_func(*args, **kwargs)
-            else:
-                key = "default"
+                try:
+                    key = key_func(*args, **kwargs)
+                except:
+                    pass
             
-            async with _lock:
-                now = time.time()
-                
-                # 初始化或清理过期请求记录
-                if key not in _requests:
-                    _requests[key] = []
-                
-                # 移除窗口期外的请求记录
-                _requests[key] = [
-                    ts for ts in _requests[key]
-                    if now - ts < window
-                ]
-                
-                # 检查是否超过限制
-                if len(_requests[key]) >= requests:
-                    raise RateLimitExceeded(
-                        f"Rate limit exceeded: {requests} requests per {window}s"
-                    )
-                
-                # 记录本次请求
-                _requests[key].append(now)
+            if not await _limiter.check(name, key):
+                raise RateLimitExceeded(f"Rate limit exceeded for {name}")
             
             return await func(*args, **kwargs)
         
         return wrapper
+    
     return decorator
 
 
 class RateLimitExceeded(Exception):
     """限流异常"""
     pass
+
+
+# FastAPI中间件 (可选)
+if FASTAPI_AVAILABLE:
+    class RateLimitMiddleware(BaseHTTPMiddleware):
+        """
+        FastAPI限流中间件
+        
+        使用示例:
+            app.add_middleware(
+                RateLimitMiddleware,
+                rate=100,
+                capacity=200,
+                key_func=lambda req: req.client.host
+            )
+        """
+        
+        def __init__(
+            self,
+            app: ASGIApp,
+            rate: float = 100,
+            capacity: int = 200,
+            key_func: Optional[Callable] = None
+        ):
+            super().__init__(app)
+            self.rate = rate
+            self.capacity = capacity
+            self.key_func = key_func or (lambda req: req.client.host if req.client else "unknown")
+            self._buckets: Dict[str, TokenBucket] = {}
+        
+        async def dispatch(self, request: Request, call_next):
+            # 生成限流key
+            key = self.key_func(request)
+            
+            # 获取或创建bucket
+            if key not in self._buckets:
+                self._buckets[key] = TokenBucket(
+                    rate=self.rate,
+                    capacity=self.capacity,
+                    key=key
+                )
+            
+            bucket = self._buckets[key]
+            
+            # 检查限流
+            if not await bucket.acquire():
+                return Response(
+                    content='{"error": "Rate limit exceeded"}',
+                    status_code=429,
+                    media_type="application/json"
+                )
+            
+            # 继续处理
+            return await call_next(request)

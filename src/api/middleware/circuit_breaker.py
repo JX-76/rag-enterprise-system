@@ -7,13 +7,24 @@ import asyncio
 from enum import Enum
 from typing import Optional, Callable, Any
 from dataclasses import dataclass
-from fastapi import Request, Response
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.types import ASGIApp
 
-from src.core.logging import get_logger
+# 尝试导入FastAPI，用于中间件包装
+try:
+    from fastapi import Request, Response
+    from starlette.middleware.base import BaseHTTPMiddleware
+    from starlette.types import ASGIApp
+    FASTAPI_AVAILABLE = True
+except ImportError:
+    FASTAPI_AVAILABLE = False
+    Request = Response = BaseHTTPMiddleware = ASGIApp = None
 
-logger = get_logger(__name__)
+# 简单的日志实现
+try:
+    from src.core.logging import get_logger
+    logger = get_logger(__name__)
+except ImportError:
+    import logging
+    logger = logging.getLogger(__name__)
 
 
 class CircuitState(Enum):

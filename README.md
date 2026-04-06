@@ -1,465 +1,362 @@
-# Enterprise RAG System
+# RAG Enterprise System
 
-> 工业级检索增强生成系统 - 可直接部署生产环境
+> 企业级RAG系统核心模块实现 - 学习/教学项目
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green.svg)](https://fastapi.tiangolo.com/)
-[![Docker](https://img.shields.io/badge/docker-ready-blue.svg)](https://www.docker.com/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-## 🚀 快速开始 (30秒运行)
+⚠️ **重要声明**: 本项目是**学习性质**的RAG系统实现，包含部分核心模块的完整代码，但**不是可直接部署的生产系统**。详见 [REALITY_CHECK.md](REALITY_CHECK.md)
 
-```bash
-# 1. 克隆项目
-git clone <your-repo-url>
-cd rag-enterprise-system
-
-# 2. 一键安装依赖
-chmod +x scripts/setup.sh && ./scripts/setup.sh
-
-# 3. 复制环境配置
-cp .env.example .env
-
-# 4. 运行演示 (无需API密钥)
-python quickstart.py
-
-# 5. 启动服务 (需要配置API密钥)
-# python src/main.py
-```
-
-**预期输出：**
-```
-✅ 熔断器工作正常！
-✅ 限流器工作正常！
-✅ RAG Pipeline流程完整！
-✅ 所有演示完成！
-```
+---
 
 ## 🎯 项目定位
 
-本项目是一个**企业级RAG系统**，可直接用于生产环境。核心特性：
+本项目是为了**深入理解企业级RAG架构**而开发的**学习项目**，特点：
 
-- **多路混合检索**：稠密向量 + 稀疏向量 + BM25 + SQL
-- **三阶重排序架构**：预排序 → 核心精排 → 生成适配
-- **查询改写引擎**：HyDE + Multi-Query + 查询扩展
-- **生产级特性**：缓存、监控、限流、熔断、日志追踪
-- **完整评估体系**：Recall@K、NDCG、Faithfulness、端到端延迟
+- ✅ **完整实现**: 熔断器、限流器、父子分块、评估指标（有单元测试）
+- ⚠️ **部分实现**: 检索、重排（结构完整，使用模拟数据演示）
+- ❌ **尚未实现**: 文档解析、向量化入库、端到端Pipeline
 
-## 📊 性能指标（基于Arxiv真实数据）
+**适合人群**:
+- 想理解RAG架构设计的工程师
+- 准备面试需要项目谈资的求职者
+- 学习生产级代码组织的开发者
 
-> 所有指标均在 [Arxiv CS论文数据集](data/arxiv/) 上实测，100+真实查询，可复现。
+**不适合**:
+- 寻找开箱即用的RAG产品的用户
+- 需要完整生产系统的团队
 
-### 检索质量
+---
 
-| 指标 | Baseline | 优化后 | 提升 |
-|------|----------|--------|------|
-| Recall@5 | 0.72 | **0.84** | +16.7% |
-| MRR | 0.52 | **0.61** | +17.3% |
-| NDCG@5 | 0.65 | **0.72** | +10.8% |
+## ✅ 完整实现的模块
 
-**关键优化**: 
-- Parent-Child分块 vs 固定分块: **+12%** Recall@5
-- Hybrid RRF融合 vs Dense only: **+9%** Recall@5  
-- HyDE改写 vs 无改写: **+7%** Recall@5
+### 1. 熔断器 (Circuit Breaker)
 
-### 系统性能
+```python
+from src.api.middleware.circuit_breaker import CircuitBreaker, CircuitBreakerConfig, CircuitState
 
-| 指标 | 数值 | 说明 |
+# 创建熔断器
+config = CircuitBreakerConfig(
+    failure_threshold=3,
+    recovery_timeout=30.0,
+    success_threshold=2
+)
+breaker = CircuitBreaker("vector_db", config)
+
+# 使用
+try:
+    result = await breaker.call(query_database, param)
+except CircuitBreakerOpen:
+    # 熔断时的降级处理
+    return cached_result
+```
+
+**状态机**: CLOSED → OPEN → HALF_OPEN → CLOSED  
+**测试**: `python -m pytest tests/unit/test_circuit_breaker.py -v`  
+**实现文件**: `src/api/middleware/circuit_breaker.py` (400+行，含HALF_OPEN恢复逻辑)
+
+### 2. 限流器 (Rate Limiter)
+
+```python
+from src.api.middleware.rate_limit import TokenBucket
+
+# 创建限流器: 10 token/秒, 容量20
+bucket = TokenBucket(rate=10, capacity=20)
+
+# 获取许可
+if await bucket.acquire():
+    # 处理请求
+    pass
+else:
+    # 限流拒绝
+    return {"error": "Rate limit exceeded"}
+```
+
+**算法**: Token Bucket (支持突发流量)  
+**测试**: `python -m pytest tests/unit/test_rate_limit.py -v`  
+**实现文件**: `src/api/middleware/rate_limit.py`
+
+### 3. 父子分块 (Parent-Child Chunking)
+
+```python
+from src.ingestion.parent_child_chunker import ParentChildChunker
+
+chunker = ParentChildChunker(
+    parent_size=1000,   # 父块1000 tokens
+    child_size=200,     # 子块200 tokens
+    child_overlap=40    # 20%重叠
+)
+
+chunks = chunker.chunk(text)
+# 返回: List[ParentChunk]
+# 每个ParentChunk包含多个ChildChunk
+# 检索时匹配子块，返回父块作为上下文
+```
+
+**优势**:
+- 子块小 → 检索精度高
+- 父块大 → 上下文完整
+
+**测试**: `python -m pytest tests/unit/test_parent_child_chunker.py -v`  
+**实现文件**: `src/ingestion/parent_child_chunker.py` (420+行)
+
+### 4. 评估指标 (Evaluation Metrics)
+
+```python
+from src.evaluation.metrics import RetrievalEvaluator, RetrievalMetrics
+
+evaluator = RetrievalEvaluator()
+metrics = evaluator.evaluate(
+    queries=queries,
+    retrieved_results=results,
+    ground_truth=ground_truth
+)
+
+print(f"Recall@5: {metrics.recall_at_k[5]}")
+print(f"MRR: {metrics.mrr}")
+print(f"NDCG@5: {metrics.ndcg_at_k[5]}")
+```
+
+**支持指标**: Recall@K, Precision@K, MRR, MAP, NDCG@K  
+**实现文件**: `src/evaluation/metrics.py`
+
+---
+
+## ⚠️ 部分实现的模块
+
+这些模块有完整代码结构，但使用模拟数据进行演示：
+
+| 模块 | 状态 | 说明 |
 |------|------|------|
-| P99 延迟 | **<200ms** | 含查询改写+检索+重排 |
-| 吞吐量 | **1000 QPS** | 8核16G配置 |
-| 熔断恢复时间 | **30s** | 从故障到恢复 |
-| 限流命中率 | **<2%** | 正常流量下 |
+| 混合检索 | ⚠️ 骨架 | RRF融合逻辑完整，但向量检索为Mock |
+| 三阶重排 | ⚠️ 骨架 | 结构完整，使用模拟分数演示流程 |
+| 查询改写 | ⚠️ 骨架 | 接口定义完整，无真实LLM调用 |
 
-### 成本分析
-
-| 组件 | 单次调用成本 | 占比 |
-|------|-------------|------|
-| Embedding | $0.0001 | 15% |
-| Vector DB | $0.00005 | 8% |
-| Rerank | $0.0002 | 30% |
-| LLM生成 | $0.0004 | 47% |
-| **总计** | **$0.00075** | - |
-
-### 实验复现
-
-```bash
-# 1. 下载真实数据
-python scripts/download_arxiv.py --category cs.AI --max 100
-python scripts/generate_qa_pairs.py --input data/arxiv/cs_AI_metadata.json
-
-# 2. 运行实验
-python scripts/run_experiments.py --experiment all --data-file data/qa_pairs.json
-
-# 3. 查看结果
-cat experiments/chunk_size_*.json
-```
-
-完整实验记录: [EXPERIMENTS.md](EXPERIMENTS.md)
-
-## 🏗️ 架构设计
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                        API Gateway                          │
-│              (限流、认证、请求ID、日志追踪)                    │
-└──────────────────────┬──────────────────────────────────────┘
-                       │
-┌──────────────────────▼──────────────────────────────────────┐
-│                    Query Rewriter                            │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐       │
-│  │   HyDE   │ │Multi-Query│ │ Query    │ │ Session  │       │
-│  │          │ │          │ │Expansion │ │  Aware   │       │
-│  └──────────┘ └──────────┘ └──────────┘ └──────────┘       │
-└──────────────────────┬──────────────────────────────────────┘
-                       │
-┌──────────────────────▼──────────────────────────────────────┐
-│                  Multi-Route Retrieval                       │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐       │
-│  │  Dense   │ │  Sparse  │ │  BM25    │ │   SQL    │       │
-│  │ (BGE)    │ │(SPLADE)  │ │          │ │          │       │
-│  └──────────┘ └──────────┘ └──────────┘ └──────────┘       │
-│                         │                                    │
-│                  ┌──────▼──────┐                            │
-│                  │  RRF Fusion │                            │
-│                  └─────────────┘                            │
-└──────────────────────┬──────────────────────────────────────┘
-                       │
-┌──────────────────────▼──────────────────────────────────────┐
-│              Three-Stage Reranking                          │
-│  Stage 1: BGE-small (Top100→Top30)  [轻量级预排序]           │
-│  Stage 2: BGE-Reranker (Top30→Top10) [核心精排]             │
-│  Stage 3: Position Optimize (Top10→Top5) [生成适配]         │
-└──────────────────────┬──────────────────────────────────────┘
-                       │
-┌──────────────────────▼──────────────────────────────────────┐
-│                   Context Processor                          │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐                    │
-│  │ Dedupli- │ │ LLMLingua│ │  Prompt  │                    │
-│  │  cation  │ │Compress  │ │  Builder │                    │
-│  └──────────┘ └──────────┘ └──────────┘                    │
-└──────────────────────┬──────────────────────────────────────┘
-                       │
-┌──────────────────────▼──────────────────────────────────────┐
-│                   LLM Generation                             │
-│              (GPT-4 / Claude / 本地模型)                      │
-│              + 幻觉检测 + 引用溯源                            │
-└─────────────────────────────────────────────────────────────┘
-```
+---
 
 ## 🚀 快速开始
 
-### 1. 环境要求
+### 环境要求
 
 - Python 3.9+
-- Docker & Docker Compose
-- 8G+ GPU (推荐) 或 CPU
+- 无需GPU
+- 无需Docker
 
-### 2. 本地开发
+### 安装
 
 ```bash
 # 克隆项目
-git clone https://github.com/yourname/enterprise-rag.git
-cd enterprise-rag
+git clone https://github.com/JX-76/rag-enterprise-system.git
+cd rag-enterprise-system
 
 # 安装依赖
 pip install -r requirements.txt
-
-# 配置环境变量
-cp .env.example .env
-# 编辑 .env 文件，设置 API Keys
-
-# 启动服务
-python -m src.main
 ```
 
-### 3. Docker部署
+### 运行测试
 
 ```bash
-# 一键部署
-docker-compose up -d
+# 测试熔断器
+python -m pytest tests/unit/test_circuit_breaker.py -v
 
-# 查看日志
-docker-compose logs -f api
+# 测试限流器  
+python -m pytest tests/unit/test_rate_limit.py -v
+
+# 测试父子分块
+python -m pytest tests/unit/test_parent_child_chunker.py -v
+
+# 运行所有测试
+python -m pytest tests/unit/ -v
 ```
 
-### 4. API调用
+### 运行演示
 
 ```bash
-# 健康检查
-curl http://localhost:8000/health
-
-# 检索接口
-curl -X POST http://localhost:8000/api/v1/retrieve \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "RAG优化方法",
-    "top_k": 5,
-    "rewrite": true,
-    "rerank": true
-  }'
-
-# 问答接口
-curl -X POST http://localhost:8000/api/v1/query \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "如何优化RAG系统的检索效果？",
-    "conversation_id": "conv_123"
-  }'
+# 模块功能演示（真实代码运行）
+python quickstart.py
 ```
+
+输出示例：
+```
+======================================================================
+  RAG Enterprise System - Module Tests
+  核心模块功能验证
+======================================================================
+
+[1/4] 熔断器测试
+  ✓ 初始状态: CLOSED
+  ✓ 3次失败后状态: OPEN (熔断触发)
+  ✓ 30秒后进入: HALF_OPEN
+  ✓ 2次成功后恢复: CLOSED
+  → 熔断器状态机工作正常
+
+[2/4] 限流器测试
+  ✓ 10 token/s 配置
+  ✓ 15次请求中10次通过，5次被拒绝
+  → Token Bucket限流工作正常
+
+[3/4] 父子分块测试
+  ✓ 10000字符文本分块
+  ✓ 生成12个父块，48个子块
+  ✓ 子块与父块关联正确
+  → Parent-Child分块工作正常
+
+[4/4] 评估指标测试
+  ✓ Recall@5 计算正确
+  ✓ MRR 计算正确
+  ✓ NDCG@5 计算正确
+  → 评估指标计算正确
+
+======================================================================
+  ✅ 所有模块测试通过！
+======================================================================
+```
+
+---
 
 ## 📁 项目结构
 
 ```
-enterprise-rag/
-├── src/                          # 源代码
-│   ├── api/                      # FastAPI接口层
-│   │   ├── routes/               # 路由定义
-│   │   ├── middleware/           # 中间件（日志、限流、追踪）
-│   │   └── models/               # Pydantic模型
-│   ├── core/                     # 核心业务逻辑
-│   │   ├── config.py             # 配置管理
-│   │   ├── exceptions.py         # 异常定义
-│   │   └── logging.py            # 日志配置
-│   ├── retrieval/                # 检索模块
-│   │   ├── dense/                # 稠密向量检索
-│   │   ├── sparse/               # 稀疏向量检索
-│   │   ├── hybrid.py             # 混合检索+RRF
-│   │   └── rewrite/              # 查询改写
-│   ├── rerank/                   # 重排序模块
-│   │   ├── stage1.py             # 预排序
-│   │   ├── stage2.py             # 核心精排
-│   │   └── stage3.py             # 生成适配
-│   ├── generation/               # 生成模块
-│   │   ├── context.py            # 上下文处理
-│   │   ├── prompt.py             # Prompt工程
-│   │   └── hallucination.py      # 幻觉检测
-│   ├── evaluation/               # 评估模块
-│   │   ├── metrics.py            # 评估指标
-│   │   └── benchmark.py          # 基准测试
-│   └── utils/                    # 工具函数
-│       ├── cache.py              # 缓存封装
-│       ├── monitoring.py         # 监控指标
-│       └── retry.py              # 重试机制
-├── config/                       # 配置文件
-│   ├── app.yaml                  # 应用配置
-│   ├── retrieval.yaml            # 检索配置
-│   └── models.yaml               # 模型配置
-├── tests/                        # 测试
-│   ├── unit/                     # 单元测试
-│   ├── integration/              # 集成测试
-│   └── benchmark/                # 性能测试
-├── deploy/                       # 部署配置
-│   ├── docker/                   # Docker配置
-│   └── k8s/                      # Kubernetes配置
-├── docs/                         # 文档
-│   ├── architecture.md           # 架构设计
-│   ├── api.md                    # API文档
-│   └── deployment.md             # 部署指南
-├── scripts/                      # 脚本
-│   ├── setup.sh                  # 初始化脚本
-│   └── benchmark.py              # 压测脚本
-├── requirements.txt              # 依赖
-├── docker-compose.yml            # Docker编排
-└── README.md                     # 本文件
+rag-enterprise-system/
+├── src/                              # 源代码
+│   ├── api/                          # FastAPI接口
+│   │   ├── middleware/               # 中间件
+│   │   │   ├── circuit_breaker.py    # ✅ 熔断器 (完整实现)
+│   │   │   └── rate_limit.py         # ✅ 限流器 (完整实现)
+│   │   └── routes/                   # 路由 (骨架)
+│   ├── ingestion/                    # 数据接入
+│   │   └── parent_child_chunker.py   # ✅ 父子分块 (完整实现)
+│   ├── evaluation/                   # 评估模块
+│   │   └── metrics.py                # ✅ 评估指标 (完整实现)
+│   ├── retrieval/                    # 检索模块 (骨架)
+│   └── rerank/                       # 重排模块 (骨架)
+├── tests/                            # 测试
+│   └── unit/                         # 单元测试
+│       ├── test_circuit_breaker.py   # ✅ 熔断器测试
+│       ├── test_rate_limit.py        # ✅ 限流器测试
+│       └── test_parent_child_chunker.py  # ✅ 分块测试
+├── scripts/                          # 脚本
+│   ├── run_experiments.py            # 实验框架
+│   ├── text_visualize.py             # 文本可视化
+│   └── download_arxiv.py             # 数据下载
+├── blog/                             # 技术博客
+│   └── 01-circuit-breaker-rate-limit.md  # 熔断限流详解
+├── README.md                         # 本文件
+├── REALITY_CHECK.md                  # 项目真实状态检查
+└── requirements.txt                  # 依赖
 ```
-
-## 🔧 核心特性详解
-
-### 1. 查询改写引擎
-
-```python
-from src.retrieval.rewrite import QueryRewriter
-
-rewriter = QueryRewriter(
-    enable_hyde=True,
-    enable_multi_query=True,
-    num_queries=5
-)
-
-query = "RAG优化"
-rewritten = rewriter.rewrite(query)
-# 输出: [HyDE假设文档, Multi-Query变体1-5, 扩展Query]
-```
-
-### 2. 多路混合检索
-
-```python
-from src.retrieval.hybrid import HybridRetriever
-
-retriever = HybridRetriever(
-    dense_weight=0.4,
-    sparse_weight=0.3,
-    bm25_weight=0.3,
-    fusion_method="rrf"  # 倒数秩融合
-)
-
-results = retriever.retrieve(query, top_k=20)
-```
-
-### 3. 三阶重排序
-
-```python
-from src.rerank import ThreeStageReranker
-
-reranker = ThreeStageReranker(
-    stage1_model="BAAI/bge-small-zh",
-    stage2_model="BAAI/bge-reranker-large",
-    stage3_optimize=True
-)
-
-final_results = reranker.rerank(query, candidates, top_k=5)
-```
-
-### 4. 生产级特性
-
-- **缓存策略**：多级缓存（本地LRU + Redis）
-- **限流熔断**：基于Token Bucket的限流，下游故障自动熔断
-- **日志追踪**：结构化日志 + TraceID全链路追踪
-- **监控指标**：Prometheus指标暴露，Grafana Dashboard
-- **错误处理**：统一异常封装，优雅降级
-
-## 📈 性能优化
-
-### 延迟优化
-
-| 优化手段 | 效果 |
-|---------|------|
-| 查询缓存 | 热点Query P99 <10ms |
-| 并行检索 | 多路召回并行执行 |
-| 轻量级预排序 | Stage1用BGE-small替代large |
-| 向量量化 | FP16存储，减少50%内存 |
-
-### 吞吐量优化
-
-| 优化手段 | 效果 |
-|---------|------|
-| 连接池 | 数据库/向量库连接复用 |
-| 批处理 | Embedding批量编码 |
-| 异步IO | FastAPI异步处理 |
-| 水平扩展 | K8s HPA自动扩缩容 |
 
 ---
 
-## ⚖️ 优缺点分析
+## 🧪 实验框架
 
-### ✅ 优势
-
-| 优势 | 说明 |
-|------|------|
-| **企业级稳定性** | 熔断、限流、降级机制完备，生产环境可容忍组件故障 |
-| **高性能** | P99延迟<200ms，单机支持1000+QPS |
-| **模块化设计** | 各组件可独立替换，易于二次开发 |
-| **完整链路** | 从查询改写到结果生成，端到端覆盖 |
-| **可观测性** | Prometheus+Grafana监控，全链路追踪 |
-| **多场景适配** | 支持知识库、法律、医疗、电商等多种场景 |
-
-### ⚠️ 局限与改进方向
-
-| 局限 | 改进方案 | 优先级 |
-|------|---------|--------|
-| 部分模块为Mock实现 | 接入真实Embedding/Rerank模型 | P0 |
-| 缺少生产压测数据 | 补充Benchmark报告 | P1 |
-| 多语言支持有限 | 增加多语言Embedding支持 | P2 |
-| 缺少可视化界面 | 开发管理后台 | P2 |
-| 知识图谱未集成 | 添加GraphRAG支持 | P3 |
-
-### 🎯 适用场景
-
-**非常适合：**
-- 需要高稳定性的生产环境
-- 对延迟敏感的应用（<500ms）
-- 多租户SaaS平台
-- 需要审计合规的场景
-
-**不太适合：**
-- 纯研究/实验项目（过于复杂）
-- 极低延迟要求（<50ms）
-- 资源极度受限环境（<4GB内存）
-
----
-
-## 📚 详细文档
-
-| 文档 | 内容 | 链接 |
-|------|------|------|
-| **部署指南** | 开发/测试/生产环境详细部署步骤 | [DEPLOYMENT.md](DEPLOYMENT.md) |
-| **环境配置** | 各场景环境变量配置说明 | [ENVIRONMENT.md](ENVIRONMENT.md) |
-| **架构设计** | 系统架构与技术选型 | [ARCHITECTURE.md](ARCHITECTURE.md) |
-| **使用案例** | 6大落地场景详细方案 | [USE_CASES.md](USE_CASES.md) |
-| **API文档** | 自动生成，启动后访问 /docs | [http://localhost:8000/docs](http://localhost:8000/docs) |
-
-## 🧪 测试覆盖
+支持对比实验，记录迭代过程：
 
 ```bash
-# 运行测试
-pytest tests/ -v --cov=src --cov-report=html
+# 运行实验（使用模拟数据演示框架）
+python scripts/run_experiments.py --experiment chunk_size
 
-# 性能压测
-python scripts/benchmark.py --qps 100 --duration 60
+# 可视化结果
+python scripts/text_visualize.py --input experiments/*.json
 ```
 
-### 测试金字塔
+实验框架特点：
+- 支持不同策略的对比
+- 自动计算Recall@K, MRR, NDCG
+- 生成可视化报告
 
-- **单元测试** (70%)：核心模块单测覆盖
-- **集成测试** (20%)：模块间集成测试
-- **E2E测试** (10%)：端到端API测试
+**注意**: 当前使用模拟数据演示框架，真实数据需要补充文档解析和向量化模块。
 
-## 📚 学习路径
+---
 
-### Week 1: 基础RAG
-- [ ] 理解RAG基本原理
-- [ ] 跑通基础检索流程
-- [ ] 学习Embedding模型
+## 📚 技术博客
 
-### Week 2: 查询优化
-- [ ] 实现HyDE改写
-- [ ] 实现Multi-Query
-- [ ] 对比实验效果
+| 文章 | 内容 | 状态 |
+|------|------|------|
+| [01. 熔断与限流](blog/01-circuit-breaker-rate-limit.md) | 生产环境稳定性设计 | ✅ 已发布 |
 
-### Week 3: 检索优化
-- [ ] 多路召回实现
-- [ ] RRF融合
-- [ ] 性能调优
+博客特点：
+- 基于真实代码讲解
+- 包含面试可谈的细节
+- 不夸大，不虚构
 
-### Week 4: 重排序优化
-- [ ] 三阶重排实现
-- [ ] 延迟与精度平衡
-- [ ] A/B测试框架
+---
 
-### Week 5: 生产化
-- [ ] 缓存策略
-- [ ] 监控告警
-- [ ] 部署上线
+## 📝 面试谈资（诚实版）
 
-## 🎯 简历亮点
+**可以这样说**:
 
-### 技术栈
-- **大模型应用**：RAG Pipeline设计、Prompt工程、幻觉抑制
-- **检索系统**：向量检索（FAISS/Milvus）、混合检索、重排序
-- **工程能力**：FastAPI、Docker、K8s、Prometheus监控
-- **算法优化**：查询改写、语义分块、上下文压缩
+> "我为了深入理解RAG系统架构，独立实现了几个核心生产级模块：
+> 
+> 1. **熔断器**: 实现了CLOSED/OPEN/HALF_OPEN三态状态机，包含自动恢复逻辑。代码400+行，有完整单元测试。
+> 2. **父子分块**: 实现了滑动窗口+语义边界识别，解决分块上下文断裂问题。代码420+行。
+> 3. **评估框架**: 实现了Recall@K, MRR, NDCG等检索指标计算。
+> 
+> 目前还是模块级别的实现，正在补齐文档解析和向量化链路。项目代码在GitHub上，核心模块有完整单元测试。"
 
-### 项目成果
-- 设计并实现企业级RAG系统，支持1000+ QPS
-- 优化检索效果：Recall@20从72%提升至88%
-- 降低系统延迟：P99从500ms优化至200ms
-- 降低幻觉率：通过上下文压缩和幻觉检测，幻觉率<5%
+**绝对不要说**:
 
-## 🔗 相关资源
+> ❌ "我做了一个企业级RAG系统，支持1000 QPS"
+> ❌ "我的系统Recall@5达到88%"
+> ❌ "可直接部署生产环境"
 
-- [RAG Survey Paper](https://arxiv.org/abs/2312.10997)
-- [LangChain RAG](https://python.langchain.com/docs/use_cases/question_answering/)
-- [Hugging Face RAG](https://huggingface.co/docs/transformers/model_doc/rag)
+---
+
+## 🔧 补全计划
+
+如果你想把项目变成完整可运行的RAG系统：
+
+### Phase 1: 补齐核心链路（2-3天）
+- [ ] 接入 `pypdf` 或 `unstructured` 做文档解析
+- [ ] 接入 `ChromaDB` + `sentence-transformers` 做向量化
+- [ ] 写一个完整的 `ingest.py` 流程
+
+### Phase 2: 接入真实LLM（1天）
+- [ ] 接入 OpenAI/Claude/通义千问 API
+- [ ] 实现真实的HyDE改写
+
+### Phase 3: 端到端验证（1-2天）
+- [ ] 准备真实数据集（100篇论文）
+- [ ] 跑通完整Pipeline测试
+- [ ] 记录真实性能指标
+
+详见 [REALITY_CHECK.md](REALITY_CHECK.md) 中的补全路线图。
+
+---
+
+## 📄 相关文档
+
+| 文档 | 内容 |
+|------|------|
+| [REALITY_CHECK.md](REALITY_CHECK.md) | 项目真实状态检查（必读） |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | 贡献指南 |
+| [EXPERIMENTS.md](EXPERIMENTS.md) | 实验记录模板 |
+
+---
+
+## 📊 代码统计
+
+```bash
+# 统计代码行数
+find src -name "*.py" | xargs wc -l
+```
+
+| 模块 | 行数 | 测试覆盖率 |
+|------|------|------------|
+| 熔断器 | ~400 | 有单元测试 |
+| 限流器 | ~200 | 有单元测试 |
+| 父子分块 | ~420 | 有单元测试 |
+| 评估指标 | ~300 | 有单元测试 |
+| 其他模块 | ~1500 | 骨架代码 |
+
+---
 
 ## 📄 License
 
 MIT License
 
-## 🤝 贡献
-
-欢迎提交Issue和PR！
-
 ---
 
-**Star** ⭐ 如果这个项目对你有帮助！
+**本项目是学习性质的实现，诚实是最好的策略。**
+
+如果你发现任何夸大或不实的描述，欢迎提交Issue指正。
