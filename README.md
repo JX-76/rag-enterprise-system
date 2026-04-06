@@ -106,11 +106,157 @@ else:
 混合检索同时执行多路召回，用RRF（Reciprocal Rank Fusion）算法融合结果。
 
 ```python
-# RRF公式：score = Σ(1 / (k + rank))
-# k通常取60
+from src.retrieval.hybrid_search import HybridRetriever, create_hybrid_retriever
+
+# 创建混合检索器
+retriever = create_hybrid_retriever(
+    vector_store=chroma_store,    # Dense检索
+    bm25_index_dir="./bm25_index", # BM25检索
+    rrf_k=60,
+    dense_weight=0.5,
+    bm25_weight=0.5
+)
+
+# 搜索
+results = retriever.search(
+    query="什么是深度学习？",
+    query_embedding=query_vec,
+    top_k=10
+)
 ```
 
-代码实现支持可配置的权重调整。
+RRF公式：`score = Σ(1 / (k + rank))`，k通常取60。支持可配置权重调整。
+
+代码位置：`src/retrieval/hybrid_search.py`
+
+### 5. 查询改写：提升检索召回率
+
+用户查询往往简短模糊，直接检索可能遗漏相关内容。查询改写通过生成多个查询变体，提升召回率。
+
+支持两种策略：
+
+**Multi-Query**：生成语义相同的多个查询变体
+```python
+from src.rag.query_rewriter import QueryRewriter
+
+rewriter = QueryRewriter()
+rewritten = rewriter.rewrite(
+    "什么是机器学习？",
+    strategies=['multi_query'],
+    num_variations=3
+)
+# 输出：
+# - 什么是机器学习？
+# - 机器学习？（去除疑问词）
+# - 什么是machine learning？（同义词替换）
+```
+
+**HyDE（Hypothetical Document Embeddings）**：生成假设答案再检索
+```python
+rewritten = rewriter.rewrite(
+    "什么是深度学习？",
+    strategies=['hyde']
+)
+# 输出假设文档：
+# "关于什么是深度学习，主要内容包括定义、原理、应用场景和实现方法。"
+```
+
+代码位置：`src/rag/query_rewriter.py`
+
+### 6. 向量化服务：文本到向量的转换
+
+使用BGE模型将文本转换为向量，支持ChromaDB存储。
+
+```python
+from src.services.embedding_service import EmbeddingService, VectorStore
+
+# 创建向量化服务
+embedder = EmbeddingService()
+
+# 编码文本
+texts = ["机器学习简介", "深度学习原理"]
+embeddings = embedder.encode(texts)
+
+# 存储到ChromaDB
+store = VectorStore()
+store.add_documents(
+    documents=[{"id": "1", "text": "...", "metadata": {}}],
+    embeddings=embeddings
+)
+
+# 搜索
+results = store.search(query_embedding, top_k=5)
+```
+
+支持批量编码、归一化、查询指令增强（BGE推荐）。
+
+代码位置：`src/services/embedding_service.py`
+
+### 7. LLM生成服务：本地模型与API兼容
+
+支持两种调用方式：
+
+**本地模型**（transformers）：
+```python
+from src.services.llm_service import LocalLLM
+
+llm = LocalLLM(
+    model_name="Qwen/Qwen2-1.5B-Instruct",
+    device="cpu"
+)
+response = llm.generate("你好")
+```
+
+**API模型**（OpenAI格式）：
+```python
+from src.services.llm_service import APILLM
+
+llm = APILLM(
+    api_key="sk-...",
+    base_url="https://api.openai.com/v1",
+    model="gpt-3.5-turbo"
+)
+response = llm.generate("你好")
+```
+
+**RAG生成器**（支持引用溯源）：
+```python
+from src.services.llm_service import RAGGenerator
+
+generator = RAGGenerator(llm=llm, enable_citation=True)
+response = generator.generate(
+    query="什么是机器学习？",
+    context_docs=retrieved_docs
+)
+# response.citations 包含引用来源
+# response.hallucination_detected 标记幻觉内容
+```
+
+代码位置：`src/services/llm_service.py`
+
+### 8. 文档解析：多格式支持
+
+支持PDF、Markdown、Word、纯文本解析。
+
+```python
+from src.ingestion.document_parser import DocumentParser
+
+parser = DocumentParser(
+    chunk_size=512,      # 目标分块大小
+    chunk_overlap=128,   # 重叠保持上下文
+    respect_semantic_boundaries=True  # 优先在语义边界切分
+)
+
+# 解析单个文件
+doc = parser.parse("document.pdf")
+
+# 解析整个目录
+docs = parser.parse_directory("./data", recursive=True)
+```
+
+语义分块策略：优先在标题、段落边界切分，避免句子中间截断。
+
+代码位置：`src/ingestion/document_parser.py`
 
 ---
 
@@ -161,16 +307,29 @@ python demo_end_to_end.py
 ```
 rag-enterprise-system/
 ├── src/
-│   ├── api/middleware/          # 熔断器、限流器
-│   ├── ingestion/               # 文档解析、父子分块
-│   ├── evaluation/              # 评估指标
-│   ├── retrieval/               # 混合检索
-│   ├── services/                # LLM服务、向量化
-│   └── rag/                     # 查询改写
+│   ├── api/middleware/          # 服务保护中间件
+│   │   ├── circuit_breaker.py   # 熔断器（400+行，完整实现）
+│   │   └── rate_limit.py        # 限流器（200+行，完整实现）
+│   ├── ingestion/               # 数据接入层
+│   │   ├── document_parser.py   # 文档解析（600+行，多格式支持）
+│   │   └── parent_child_chunker.py  # 父子分块（420+行）
+│   ├── evaluation/              # 评估层
+│   │   └── metrics.py           # 检索指标（300+行，Recall/MRR/NDCG）
+│   ├── retrieval/               # 检索层
+│   │   └── hybrid_search.py     # 混合检索（350+行，RRF融合）
+│   ├── services/                # 服务层
+│   │   ├── embedding_service.py # 向量化（400+行，BGE+ChromaDB）
+│   │   └── llm_service.py       # LLM服务（500+行，本地+API）
+│   └── rag/                     # RAG核心
+│       └── query_rewriter.py    # 查询改写（250+行，Multi-Query+HyDE）
 ├── tests/unit/                  # 单元测试
-├── blog/                        # 技术文章
-├── README.md                    # 本文件
-└── REALITY_CHECK.md             # 项目状态说明
+│   ├── test_circuit_breaker.py  # 熔断器测试
+│   ├── test_rate_limit.py       # 限流器测试
+│   └── test_parent_child_chunker.py  # 分块测试
+├── demo_end_to_end.py           # 端到端演示脚本
+├── quickstart.py                # 核心模块快速测试
+├── requirements.txt             # 依赖管理
+└── README.md                    # 项目说明
 ```
 
 ---
@@ -226,23 +385,102 @@ rag-enterprise-system/
 
 ---
 
+## 模块详细说明
+
+### 服务保护中间件（api/middleware/）
+
+生产环境的核心稳定性保障。
+
+**熔断器**（`circuit_breaker.py`）：
+- 三态状态机：CLOSED/OPEN/HALF_OPEN
+- 自动故障检测和恢复
+- 线程安全实现
+- 使用示例见上文
+
+**限流器**（`rate_limit.py`）：
+- Token Bucket算法
+- 支持突发流量
+- 可配置rate和capacity
+- 使用示例见上文
+
+### 数据接入层（ingestion/）
+
+**文档解析**（`document_parser.py`）：
+- 支持格式：PDF（pypdf）、Word（python-docx）、Markdown、TXT
+- 语义分块：优先在标题、段落边界切分
+- 滑动窗口：保持上下文连续性
+- 多编码支持：UTF-8、GBK、Latin-1自动检测
+- 代码行数：600+
+
+**父子分块**（`parent_child_chunker.py`）：
+- Parent-Child策略解决检索粒度矛盾
+- 子块小精度高，父块大上下文完整
+- ID关联机制
+- 代码行数：420+
+
+### 检索层（retrieval/）
+
+**混合检索**（`hybrid_search.py`）：
+- DenseRetriever：基于ChromaDB的向量检索
+- BM25Retriever：基于Whoosh的稀疏检索
+- HybridRetriever：RRF融合，可配置权重
+- 代码行数：350+
+
+### RAG核心（rag/）
+
+**查询改写**（`query_rewriter.py`）：
+- Multi-Query：生成多个查询变体
+- HyDE：生成假设答案再检索
+- 支持LLM增强（可选）
+- 代码行数：250+
+
+### 服务层（services/）
+
+**向量化服务**（`embedding_service.py`）：
+- EmbeddingService：BGE模型编码
+- VectorStore：ChromaDB封装
+- RAGIngestionPipeline：文档入库Pipeline
+- 支持批量编码、归一化、查询指令
+- 代码行数：400+
+
+**LLM服务**（`llm_service.py`）：
+- LocalLLM：transformers本地模型（Qwen等）
+- APILLM：OpenAI格式API
+- RAGGenerator：支持引用溯源的生成器
+- 基础幻觉检测
+- 代码行数：500+
+
+### 评估层（evaluation/）
+
+**评估指标**（`metrics.py`）：
+- Recall@K：召回率
+- Precision@K：精确率
+- MRR：平均倒数排名
+- MAP：平均精度均值
+- NDCG@K：归一化折损累积增益
+- 代码行数：300+
+
+---
+
 ## 代码统计
 
 ```bash
 find src -name "*.py" | xargs wc -l
 ```
 
-| 模块 | 代码行数 | 测试覆盖 |
-|------|---------|----------|
-| 熔断器 | ~400 | 单元测试通过 |
-| 限流器 | ~200 | 单元测试通过 |
-| 父子分块 | ~420 | 单元测试通过 |
-| 评估指标 | ~300 | 单元测试通过 |
-| 文档解析 | ~600 | 可运行 |
-| 向量化服务 | ~400 | 可运行 |
-| 混合检索 | ~350 | 可运行 |
-| 查询改写 | ~250 | 可运行 |
-| LLM服务 | ~500 | 可运行 |
+| 模块 | 代码行数 | 测试状态 | 依赖要求 |
+|------|---------|----------|---------|
+| 熔断器 | ~400 | 单元测试通过 | 无 |
+| 限流器 | ~200 | 单元测试通过 | 无 |
+| 父子分块 | ~420 | 单元测试通过 | 无 |
+| 评估指标 | ~300 | 单元测试通过 | 可选numpy |
+| 文档解析 | ~600 | 可运行 | pypdf, python-docx（可选） |
+| 向量化服务 | ~400 | 可运行 | torch, sentence-transformers, chromadb（可选） |
+| 混合检索 | ~350 | 可运行 | whoosh（可选） |
+| 查询改写 | ~250 | 可运行 | 无 |
+| LLM服务 | ~500 | 可运行 | transformers, openai（可选） |
+
+**总计**：约3400行Python代码
 
 ---
 
