@@ -8,18 +8,25 @@
 
 | 层级 | 技术/框架 | 说明 |
 |------|----------|------|
-| **API框架** | FastAPI + Uvicorn | 高性能异步API服务 |
-| **LLM框架** | LangChain + LlamaIndex | 主流LLM应用框架集成 |
-| **向量数据库** | ChromaDB + Milvus + Qdrant | 多向量库支持 |
-| **Embedding** | Sentence-Transformers + BGE | 中文优化向量模型 |
-| **LLM提供商** | OpenAI + Anthropic + Local | 多模型支持 |
-| **文档处理** | PyPDF + python-docx + unstructured | 多格式文档解析 |
-| **检索** | Whoosh + BM25 + RRF | 混合检索策略 |
-| **缓存** | Redis | 高性能缓存 |
-| **监控** | Prometheus + Grafana | 可观测性 |
-| **部署** | Docker + Docker Compose | 容器化部署 |
-| **配置** | Pydantic Settings | 类型安全的配置管理 |
-| **测试** | pytest + pytest-asyncio | 异步测试框架 |
+| **API框架** | FastAPI + Uvicorn + Starlette | 高性能异步API服务 |
+| **LLM框架** | LangChain + LlamaIndex + Haystack | 主流LLM应用框架 |
+| **向量数据库** | ChromaDB + Milvus + Qdrant + Pinecone | 多向量库支持 |
+| **Embedding** | Sentence-Transformers + BGE + OpenAI | 多模型支持 |
+| **LLM提供商** | OpenAI + Anthropic + Cohere + Google + 通义千问 | 多厂商支持 |
+| **文档处理** | PyPDF + PyMuPDF + python-docx + unstructured | 多格式解析 |
+| **检索** | Whoosh + BM25 + Elasticsearch + OpenSearch | 混合检索策略 |
+| **数据库** | PostgreSQL + pgvector + MongoDB + MinIO | 数据存储 |
+| **消息队列** | Celery + Redis + Kafka + RabbitMQ | 异步任务处理 |
+| **缓存** | Redis + Memcached + DiskCache | 多级缓存 |
+| **工作流** | Prefect + Airflow + Dagster | 数据管道编排 |
+| **监控** | Prometheus + Grafana + OpenTelemetry + Sentry | 可观测性 |
+| **服务网格** | Istio + Envoy | 微服务治理 |
+| **部署** | Docker + Kubernetes + Helm + Terraform | 云原生部署 |
+| **API网关** | Kong + Nginx + Traefik | 流量管理 |
+| **配置** | Pydantic Settings + python-dotenv | 配置管理 |
+| **测试** | pytest + Locust + Factory Boy | 测试与压测 |
+| **安全** | JWT + OAuth2 + Passlib | 认证授权 |
+| **压测** | Locust | 性能测试 |
 
 ---
 
