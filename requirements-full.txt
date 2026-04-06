@@ -1,0 +1,84 @@
+# 企业级RAG完整依赖
+# 安装: pip install -r requirements-full.txt
+
+# ========== Web Framework ==========
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+python-multipart==0.0.6
+
+# ========== LLM Frameworks ==========
+langchain==0.1.0
+langchain-community==0.0.10
+langchain-openai==0.0.5
+llama-index==0.9.0
+llama-index-embeddings-huggingface==0.1.0
+
+# ========== Vector Databases ==========
+chromadb==0.4.18
+qdrant-client==1.6.0
+weaviate-client==3.25.0
+pymilvus==2.3.0
+
+# ========== Embeddings & ML ==========
+sentence-transformers==2.2.2
+transformers==4.36.0
+torch==2.1.2 --index-url https://download.pytorch.org/whl/cpu
+huggingface-hub==0.19.4
+tokenizers==0.15.0
+accelerate==0.25.0
+
+# ========== LLM Providers ==========
+openai==1.6.0
+anthropic==0.8.0
+cohere==4.39
+
+# ========== Document Processing ==========
+pypdf==3.17.4
+python-docx==1.1.0
+unstructured==0.11.0
+markdown==3.5.1
+beautifulsoup4==4.12.2
+
+# ========== Search & Retrieval ==========
+whoosh==2.7.4
+rank-bm25==0.2.2
+elasticsearch==8.11.0
+
+# ========== Data & Storage ==========
+pandas==2.1.4
+numpy==1.24.3
+redis==5.0.1
+SQLAlchemy==2.0.23
+alembic==1.13.1
+
+# ========== Monitoring & Observability ==========
+prometheus-client==0.19.0
+opentelemetry-api==1.21.0
+opentelemetry-sdk==1.21.0
+opentelemetry-instrumentation-fastapi==0.42b0
+structlog==23.2.0
+
+# ========== Configuration & Utilities ==========
+pydantic==2.5.0
+pydantic-settings==2.1.0
+python-dotenv==1.0.0
+PyYAML==6.0.1
+typer==0.9.0
+rich==13.7.0
+
+# ========== Testing ==========
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-cov==4.1.0
+httpx==0.25.2
+
+# ========== Code Quality ==========
+black==23.11.0
+isort==5.12.0
+mypy==1.7.1
+flake8==6.1.0
+pre-commit==3.5.0
+
+# ========== Deployment ==========
+gunicorn==21.2.0
+docker==6.1.3

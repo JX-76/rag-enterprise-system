@@ -4,6 +4,25 @@
 
 ---
 
+## 🛠️ 技术栈
+
+| 层级 | 技术/框架 | 说明 |
+|------|----------|------|
+| **API框架** | FastAPI + Uvicorn | 高性能异步API服务 |
+| **LLM框架** | LangChain + LlamaIndex | 主流LLM应用框架集成 |
+| **向量数据库** | ChromaDB + Milvus + Qdrant | 多向量库支持 |
+| **Embedding** | Sentence-Transformers + BGE | 中文优化向量模型 |
+| **LLM提供商** | OpenAI + Anthropic + Local | 多模型支持 |
+| **文档处理** | PyPDF + python-docx + unstructured | 多格式文档解析 |
+| **检索** | Whoosh + BM25 + RRF | 混合检索策略 |
+| **缓存** | Redis | 高性能缓存 |
+| **监控** | Prometheus + Grafana | 可观测性 |
+| **部署** | Docker + Docker Compose | 容器化部署 |
+| **配置** | Pydantic Settings | 类型安全的配置管理 |
+| **测试** | pytest + pytest-asyncio | 异步测试框架 |
+
+---
+
 ## 项目背景：为什么做这个项目
 
 检索增强生成（RAG）是目前大模型应用落地的主流技术路线。但市面上大多数教程停留在调用LangChain的层面，对于想要深入理解底层原理的工程师来说，缺乏一个可以逐行研读的生产级代码实现。
@@ -471,6 +490,116 @@ find src -name "*.py" | xargs wc -l
 | LLM服务 | ~500 | 可运行 | transformers, openai（可选） |
 
 **总计**：约3400行Python代码
+
+---
+
+## 🚀 快速启动
+
+### 方式一：Docker Compose（推荐）
+
+```bash
+# 1. 克隆项目
+git clone https://github.com/JX-76/rag-enterprise-system.git
+cd rag-enterprise-system
+
+# 2. 配置环境变量
+cp .env.example .env
+# 编辑 .env 填入你的 OpenAI API Key
+
+# 3. 启动服务
+docker-compose up -d
+
+# 4. 访问服务
+# API: http://localhost:8000
+# 文档: http://localhost:8000/docs
+# Grafana: http://localhost:3000 (admin/admin)
+```
+
+### 方式二：本地运行
+
+```bash
+# 1. 安装依赖
+pip install -r requirements-full.txt
+
+# 2. 配置环境变量
+export OPENAI_API_KEY=sk-your-key
+
+# 3. 启动服务
+python -m src.api.main
+
+# 4. 测试
+python quickstart.py
+```
+
+### 方式三：LangChain集成
+
+```python
+from examples.langchain_integration import CustomRAGPipeline
+
+# 创建Pipeline
+pipeline = CustomRAGPipeline(
+    embedding_model="BAAI/bge-small-zh-v1.5",
+    llm_model="gpt-3.5-turbo",
+    use_custom_chunker=True  # 使用本项目的父子分块
+)
+
+# 接入文档
+pipeline.ingest_documents(["你的文档内容"])
+
+# 查询
+result = pipeline.query("你的问题")
+print(result["answer"])
+```
+
+---
+
+## 🔗 与主流框架的关系
+
+本项目**不是**为了替代LangChain/LlamaIndex，而是**补充和深化**。
+
+### 为什么需要自定义实现？
+
+| 场景 | LangChain默认 | 本项目定制 |
+|------|--------------|-----------|
+| 熔断保护 | ❌ 无内置 | ✅ 三态状态机 |
+| 父子分块 | ❌ 无关联ID | ✅ Parent-Child关联 |
+| RRF融合 | ✅ 有 | ✅ 更灵活权重控制 |
+| 评估指标 | ✅ Ragas | ✅ 手写计算逻辑 |
+
+### 使用方式
+
+**推荐模式**：LangChain快速搭建 + 本项目深度定制
+
+```python
+# 1. 用LangChain快速搭建原型
+from langchain import OpenAI
+from langchain.vectorstores import Chroma
+
+# 2. 用本项目优化核心模块
+from src.ingestion.parent_child_chunker import ParentChildChunker
+from src.api.middleware.circuit_breaker import CircuitBreaker
+
+# 3. 组合使用
+chunker = ParentChildChunker()  # 自定义分块
+docs = chunker.chunk(text)
+# ... 转换为LangChain Document继续流程
+```
+
+详见 [examples/langchain_integration.py](examples/langchain_integration.py)
+
+---
+
+## 📚 API文档
+
+启动服务后访问：
+- Swagger UI: http://localhost:8000/docs
+- ReDoc: http://localhost:8000/redoc
+
+主要接口：
+- `POST /ingest` - 文档接入
+- `POST /query` - 智能查询
+- `GET /health` - 健康检查
+- `GET /metrics` - Prometheus指标
 
 ---
 

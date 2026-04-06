@@ -1,73 +1,82 @@
 version: '3.8'
 
 services:
-  api:
+  # RAG API服务
+  rag-api:
     build:
       context: .
-      dockerfile: deploy/docker/Dockerfile
+      dockerfile: Dockerfile
     ports:
       - "8000:8000"
       - "9090:9090"  # metrics
     environment:
       - DEBUG=false
-      - WORKERS=4
-      - REDIS_URL=redis://redis:6379/0
-      - VECTOR_STORE_HOST=milvus
+      - LOG_LEVEL=INFO
+      - VECTOR_PROVIDER=chromadb
+      - LLM_PROVIDER=openai
+      - LLM_API_KEY=${OPENAI_API_KEY}
+    volumes:
+      - ./chroma_db:/app/chroma_db
     depends_on:
       - redis
-      - milvus
-    volumes:
-      - ./models:/app/models
-      - ./data:/app/data
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          cpus: '4'
-          memory: 8G
+      - chroma
+    networks:
+      - rag-network
 
+  # ChromaDB向量数据库
+  chroma:
+    image: chromadb/chroma:latest
+    ports:
+      - "8001:8000"
+    volumes:
+      - chroma-data:/chroma/chroma
+    environment:
+      - IS_PERSISTENT=TRUE
+    networks:
+      - rag-network
+
+  # Redis缓存
   redis:
     image: redis:7-alpine
     ports:
       - "6379:6379"
     volumes:
-      - redis_data:/data
-    restart: unless-stopped
+      - redis-data:/data
+    networks:
+      - rag-network
 
-  milvus:
-    image: milvusdb/milvus:v2.3.0
-    ports:
-      - "19530:19530"
-      - "9091:9091"
-    volumes:
-      - milvus_data:/var/lib/milvus
-    environment:
-      - ETCD_USE_EMBED=true
-      - MINIO_USE_EMBED=true
-    restart: unless-stopped
-
+  # Prometheus监控
   prometheus:
     image: prom/prometheus:latest
     ports:
-      - "9092:9090"
+      - "9091:9090"
     volumes:
-      - ./deploy/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
-      - prometheus_data:/prometheus
-    restart: unless-stopped
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    networks:
+      - rag-network
 
+  # Grafana可视化
   grafana:
     image: grafana/grafana:latest
     ports:
       - "3000:3000"
     volumes:
-      - ./deploy/monitoring/grafana:/etc/grafana/provisioning
-      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
+      - grafana-data:/var/lib/grafana
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
-    restart: unless-stopped
+    depends_on:
+      - prometheus
+    networks:
+      - rag-network
 
 volumes:
-  redis_data:
-  milvus_data:
-  prometheus_data:
-  grafana_data:
+  chroma-data:
+  redis-data:
+  prometheus-data:
+  grafana-data:
+
+networks:
+  rag-network:
+    driver: bridge
