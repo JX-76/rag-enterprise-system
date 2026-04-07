@@ -1,365 +1,214 @@
-# RAG Scaffold：轻量级RAG脚手架
+# 基于 LangChain+Milvus 的大模型 RAG 问答实战 Demo（含踩坑复盘）
 
-> **定位**：学习型开源项目 → 轻量级脚手架 → 渐进式生产化  
-> **核心价值**：开箱即用的RAG流水线 + 可逐行研读的底层实现
+> **定位**：个人求职实战项目 | 单机版可运行 | 全流程开发记录
+> 
+> **核心价值**：文档上传→解析→分块→向量化→检索→大模型问答完整闭环，重点记录开发中的技术问题与解决方案
 
 ---
 
-## 🛠️ 技术栈
+## 项目简介
+
+这是一个**个人求职实战项目**，实现了大模型 RAG（检索增强生成）系统的完整流程：
+
+```
+文档上传 → 解析分块 → Embedding向量化 → 向量入库 → 用户查询 → 检索相关文档 → 拼接Prompt → 大模型生成回答
+```
+
+**非生产级分布式系统**，单机版即可运行，适合：
+- 求职面试时演示完整技术能力
+- 学习 RAG 全流程开发
+- 理解大模型应用的实际落地问题
+
+**技术诚实声明**：本项目为求职 Demo，功能完整但非企业级，已知的局限性会在文档中如实说明。
+
+---
+
+## 技术栈（精简可落地）
 
 | 层级 | 选型 | 说明 |
 |------|------|------|
-| **API框架** | FastAPI | 异步高性能，类型安全 |
-| **LLM框架** | LangChain | 快速接入多厂商LLM |
-| **向量数据库** | ChromaDB → Milvus | 渐进式升级 |
-| **Embedding** | BGE | 中文优化，本地部署 |
-| **LLM** | OpenAI / 通义千问 | 主备切换 |
-| **数据库** | PostgreSQL + Redis | 关系+缓存 |
-| **任务队列** | Celery | 异步文档处理 |
-| **监控** | Prometheus + Grafana | 性能观测 |
-| **部署** | Docker / Kubernetes | 按需选择 |
+| **API 框架** | FastAPI | 轻量接口服务，自带 Swagger 文档 |
+| **RAG 框架** | LangChain | 简化接入，避免重复造轮子 |
+| **向量数据库** | Milvus Standalone | 轻量单机版，部署简单 |
+| **Embedding** | BGE-small | 轻量速度快，单机可跑 |
+| **大模型** | 本地 Qwen/Llama3 + 在线 API | 双模式适配不同硬件环境 |
+| **文档解析** | pypdf + python-docx | 支持 PDF、Word、TXT 基础格式 |
+| **数据存储** | SQLite | 零配置，存储文档元数据 |
+| **部署** | Docker + Docker Compose | 单机容器化，一键启动 |
 
-详见 [docs/tech-stack.md](docs/tech-stack.md)
+**删除的冗余技术栈**（为短期落地）：
+- ❌ Celery + Redis → 改为 FastAPI 同步任务
+- ❌ PostgreSQL → 改为 SQLite
+- ❌ Prometheus + Grafana → 改为控制台日志
+- ❌ K8s/Helm/Terraform → 改为单机 Docker
 
 ---
 
-## 快速开始
+## 快速开始（3 步跑通）
 
-3行命令跑通完整RAG流程：
+### 1. 环境准备
 
 ```bash
-git clone https://github.com/JX-76/rag-enterprise-system.git
-cd rag-enterprise-system && pip install -r requirements-mvp.txt
-python demo_quickstart.py
-```
-
-**demo_quickstart.py 会：**
-1. 自动创建示例文档
-2. 执行文档入库（解析→分块→向量化→存储）
-3. 运行3个问答查询，展示检索+生成流程
-4. 演示多轮对话上下文
-
----
-
-## 项目定位
-
-这是一个**轻量级RAG脚手架**，面向两类用户：
-
-| 用户类型 | 使用方式 | 价值 |
-|---------|---------|------|
-| **学习者** | 阅读源码，逐行理解RAG原理 | 手写实现，无黑盒 |
-| **开发者** | 开箱即用，快速搭建原型 | 默认配置即生产可用 |
-
-**渐进式升级路径**：
-```
-学习型（当前）→ 轻量脚手架 → 生产系统
-   ↓              ↓            ↓
- 读源码         改配置       扩模块
-```
-
-### 新特性：Memory四层 + Agent技能库
-
-本项目已实现企业级Agent架构：
-
-**Memory四层架构** (`src/memory/`):
-- **超短期**: 当前会话上下文（内存存储）
-- **短期**: 近7天历史（Redis）
-- **长期**: 用户画像与偏好（PostgreSQL）
-- **全局**: 企业知识库（向量检索）
-
-**Agent技能库** (`src/agent/skills/`):
-- 技能注册/发现/搜索/推荐
-- 任务规划与执行链
-- 6个内置技能（文档搜索/总结/对比/报告/代码分析/数据库查询）
-- 执行统计（RL优化基础）
-
-### 模块状态
-
-**已实现并测试通过（可直接运行）**：
-- 熔断器（Circuit Breaker）：三态状态机完整实现
-- 限流器（Rate Limiter）：Token Bucket算法
-- 父子分块（Parent-Child Chunking）：语义分块策略
-- 评估指标（Evaluation Metrics）：Recall@K、MRR、NDCG等
-
-**已实现但未接入真实数据（有完整代码结构）**：
-- 文档解析（PDF/Markdown/Word/Text）
-- 向量化服务（BGE模型 + ChromaDB）
-- 混合检索（Dense + BM25 + RRF融合）
-- 查询改写（Multi-Query + HyDE）
-- LLM生成服务（本地Qwen + API兼容）
-
-**尚未实现**：
-- 完整的端到端Pipeline（需要用户自行组装）
-- 大规模数据集评测
-
----
-
-## 技术亮点：值得仔细读的代码
-
-### 1. 熔断器：微服务稳定性设计
-
-生产环境中的向量数据库、LLM服务都可能故障。熔断器的设计参考了Netflix的Hystrix，实现了完整的三态状态机：
-
-```python
-from src.api.middleware.circuit_breaker import (
-    CircuitBreaker, CircuitBreakerConfig
-)
-
-config = CircuitBreakerConfig(
-    failure_threshold=3,      # 连续3次失败触发熔断
-    recovery_timeout=30.0,    # 30秒后尝试恢复
-    success_threshold=2       # 连续2次成功则关闭熔断
-)
-breaker = CircuitBreaker("vector_db", config)
-```
-
-状态转换逻辑：`CLOSED → OPEN → HALF_OPEN → CLOSED`
-
-核心代码在 `src/api/middleware/circuit_breaker.py`，约400行，包含完整的HALF_OPEN探测和恢复机制。
-
-### 2. 父子分块：解决检索粒度的矛盾
-
-RAG的一个经典难题：分块太大会降低检索精度，分块太小会丢失上下文。
-
-父子分块策略的思路是：
-- **子块**：小粒度（如200 tokens），用于精准匹配查询
-- **父块**：大粒度（如1000 tokens），用于提供完整上下文
-
-检索时匹配子块，返回对应的父块给LLM。
-
-```python
-from src.ingestion.parent_child_chunker import ParentChildChunker
-
-chunker = ParentChildChunker(
-    parent_size=1000,
-    child_size=200,
-    child_overlap=40   # 20%重叠保持连续性
-)
-
-parent_chunks = chunker.chunk(text)
-# 每个parent_chunk包含多个child_chunk
-# 子块与父块通过ID关联
-```
-
-实现细节包括语义边界识别（优先在标题、段落处切分）和滑动窗口重叠。
-
-### 3. Token Bucket限流：API保护机制
-
-大模型API通常有调用限制。Token Bucket算法既可以限制平均速率，又允许一定突发流量。
-
-```python
-from src.api.middleware.rate_limit import TokenBucket
-
-bucket = TokenBucket(rate=10, capacity=20)  # 10/s，桶容量20
-
-if await bucket.acquire():
-    # 处理请求
-else:
-    # 限流拒绝，返回429
-```
-
-### 4. 混合检索：多路召回融合
-
-单一检索策略各有优劣：
-- Dense向量检索：语义匹配好，但可能漏掉关键词
-- BM25：关键词匹配准确，但缺乏语义理解
-
-混合检索同时执行多路召回，用RRF（Reciprocal Rank Fusion）算法融合结果。
-
-```python
-from src.retrieval.hybrid_search import HybridRetriever, create_hybrid_retriever
-
-# 创建混合检索器
-retriever = create_hybrid_retriever(
-    vector_store=chroma_store,    # Dense检索
-    bm25_index_dir="./bm25_index", # BM25检索
-    rrf_k=60,
-    dense_weight=0.5,
-    bm25_weight=0.5
-)
-
-# 搜索
-results = retriever.search(
-    query="什么是深度学习？",
-    query_embedding=query_vec,
-    top_k=10
-)
-```
-
-RRF公式：`score = Σ(1 / (k + rank))`，k通常取60。支持可配置权重调整。
-
-代码位置：`src/retrieval/hybrid_search.py`
-
-### 5. 查询改写：提升检索召回率
-
-用户查询往往简短模糊，直接检索可能遗漏相关内容。查询改写通过生成多个查询变体，提升召回率。
-
-支持两种策略：
-
-**Multi-Query**：生成语义相同的多个查询变体
-```python
-from src.rag.query_rewriter import QueryRewriter
-
-rewriter = QueryRewriter()
-rewritten = rewriter.rewrite(
-    "什么是机器学习？",
-    strategies=['multi_query'],
-    num_variations=3
-)
-# 输出：
-# - 什么是机器学习？
-# - 机器学习？（去除疑问词）
-# - 什么是machine learning？（同义词替换）
-```
-
-**HyDE（Hypothetical Document Embeddings）**：生成假设答案再检索
-```python
-rewritten = rewriter.rewrite(
-    "什么是深度学习？",
-    strategies=['hyde']
-)
-# 输出假设文档：
-# "关于什么是深度学习，主要内容包括定义、原理、应用场景和实现方法。"
-```
-
-代码位置：`src/rag/query_rewriter.py`
-
-### 6. 向量化服务：文本到向量的转换
-
-使用BGE模型将文本转换为向量，支持ChromaDB存储。
-
-```python
-from src.services.embedding_service import EmbeddingService, VectorStore
-
-# 创建向量化服务
-embedder = EmbeddingService()
-
-# 编码文本
-texts = ["机器学习简介", "深度学习原理"]
-embeddings = embedder.encode(texts)
-
-# 存储到ChromaDB
-store = VectorStore()
-store.add_documents(
-    documents=[{"id": "1", "text": "...", "metadata": {}}],
-    embeddings=embeddings
-)
-
-# 搜索
-results = store.search(query_embedding, top_k=5)
-```
-
-支持批量编码、归一化、查询指令增强（BGE推荐）。
-
-代码位置：`src/services/embedding_service.py`
-
-### 7. LLM生成服务：本地模型与API兼容
-
-支持两种调用方式：
-
-**本地模型**（transformers）：
-```python
-from src.services.llm_service import LocalLLM
-
-llm = LocalLLM(
-    model_name="Qwen/Qwen2-1.5B-Instruct",
-    device="cpu"
-)
-response = llm.generate("你好")
-```
-
-**API模型**（OpenAI格式）：
-```python
-from src.services.llm_service import APILLM
-
-llm = APILLM(
-    api_key="sk-...",
-    base_url="https://api.openai.com/v1",
-    model="gpt-3.5-turbo"
-)
-response = llm.generate("你好")
-```
-
-**RAG生成器**（支持引用溯源）：
-```python
-from src.services.llm_service import RAGGenerator
-
-generator = RAGGenerator(llm=llm, enable_citation=True)
-response = generator.generate(
-    query="什么是机器学习？",
-    context_docs=retrieved_docs
-)
-# response.citations 包含引用来源
-# response.hallucination_detected 标记幻觉内容
-```
-
-代码位置：`src/services/llm_service.py`
-
-### 8. 文档解析：多格式支持
-
-支持PDF、Markdown、Word、纯文本解析。
-
-```python
-from src.ingestion.document_parser import DocumentParser
-
-parser = DocumentParser(
-    chunk_size=512,      # 目标分块大小
-    chunk_overlap=128,   # 重叠保持上下文
-    respect_semantic_boundaries=True  # 优先在语义边界切分
-)
-
-# 解析单个文件
-doc = parser.parse("document.pdf")
-
-# 解析整个目录
-docs = parser.parse_directory("./data", recursive=True)
-```
-
-语义分块策略：优先在标题、段落边界切分，避免句子中间截断。
-
-代码位置：`src/ingestion/document_parser.py`
-
----
-
-## 快速上手
-
-### 环境准备
-
-```bash
-# Python 3.9+
+# 克隆项目
 git clone https://github.com/JX-76/rag-enterprise-system.git
 cd rag-enterprise-system
 
-# 基础依赖（运行核心模块测试）
-pip install pytest pytest-asyncio
-
-# 完整依赖（运行端到端RAG）
-pip install torch transformers sentence-transformers chromadb whoosh pypdf python-docx
+# 安装依赖
+pip install -r requirements.txt
 ```
 
-### 运行测试
+### 2. 启动 Milvus（向量数据库）
 
 ```bash
-# 熔断器测试
-python -m pytest tests/unit/test_circuit_breaker.py -v
+# 方式1：Docker 启动（推荐）
+docker-compose up -d milvus
 
-# 限流器测试
-python -m pytest tests/unit/test_rate_limit.py -v
-
-# 父子分块测试
-python -m pytest tests/unit/test_parent_child_chunker.py -v
-
-# 一键运行所有测试
-python quickstart.py
+# 方式2：本地安装 Milvus Standalone
+# 参考：https://milvus.io/docs/install_standalone-docker.md
 ```
 
-### 运行端到端演示
+### 3. 启动服务
 
 ```bash
-python demo_end_to_end.py
+# 配置大模型（修改 config.py）
+# 支持本地模型或在线 API
+
+# 启动 FastAPI 服务
+python main.py
+
+# 访问接口文档
+open http://localhost:8000/docs
 ```
 
-这个脚本演示完整的RAG流程：文档解析、分块、查询改写、服务保护机制。
+---
+
+## Demo 功能演示
+
+### 1. 上传文档
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/documents/upload" \
+  -H "accept: application/json" \
+  -F "file=@test_document.pdf"
+```
+
+**支持的格式**：PDF、DOCX、TXT（带格式校验，拒绝非法格式）
+
+### 2. 问答查询
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/chat/ask" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "question": "这份文档的主要内容是什么？",
+    "session_id": "test_session"
+  }'
+```
+
+**返回**：基于检索文档的大模型生成答案
+
+### 3. 查看文档列表
+
+```bash
+curl "http://localhost:8000/api/v1/documents/"
+```
+
+### 4. 删除文档
+
+```bash
+curl -X DELETE "http://localhost:8000/api/v1/documents/{doc_id}"
+```
+
+---
+
+## 核心技术实现
+
+### 1. 文档处理模块
+
+**语义分块策略**：
+- 按段落、标点拆分，避免语义割裂
+- 配置参数：`chunk_size=512`, `chunk_overlap=64`
+- 短文档不拆分，长文档保留上下文关联
+
+**异常处理**：
+- PDF 扫描件、加密 PDF 捕获异常并返回明确提示
+- 中文乱码问题：pdfplumber + UTF-8 编码
+
+### 2. 向量数据库模块
+
+**抽象层设计**：
+```python
+class VectorDB(ABC):
+    @abstractmethod
+    def add(self, documents): pass
+    
+    @abstractmethod
+    def search(self, query_embedding, top_k): pass
+```
+
+- Milvus 实现类继承基类，后续可快速切换
+- 连接池管理，避免重复连接报错
+
+### 3. RAG 检索生成模块
+
+**Hybrid 检索**（向量+关键词）：
+- Dense 向量检索：语义匹配
+- BM25 关键词检索：精确匹配
+- RRF 融合排序：综合两种检索结果
+
+**Prompt 工程**：
+```
+你是一位专业助手。请仅基于以下检索到的文档内容回答问题。
+如果文档中没有相关信息，请明确回答"未找到相关信息"。
+
+检索文档：
+{retrieved_documents}
+
+用户问题：{question}
+
+请给出准确、简洁的回答：
+```
+
+**幻觉检测基础版**：
+- 对比回答与检索文档的相似度
+- 匹配度低于 50% 标记为疑似幻觉，返回提示
+
+### 4. 大模型接入
+
+**双模式支持**：
+- 本地模型：LM Studio 部署 Qwen-7B/Llama3（4bit 量化）
+- 在线 API：通义千问、文心一言（配置文件切换）
+
+**参数可配置**：
+- `temperature`、`top_p`、`max_tokens` 控制生成随机性
+
+---
+
+## 开发踩坑与问题解决
+
+详细记录见 [DEVELOP_PIT.md](./DEVELOP_PIT.md)
+
+### 精选踩坑案例
+
+#### 1. PDF 解析中文乱码
+- **问题**：pypdf 解析部分 PDF 后中文显示乱码
+- **原因**：编码支持不佳，未指定中文编码
+- **解决**：pdfplumber 补充解析 + 强制 UTF-8
+
+#### 2. 向量检索精度低
+- **问题**：用户查询匹配不到相关文档
+- **原因**：固定 token 分块割裂语义，单一向量检索覆盖不全
+- **解决**：语义分块 + BM25 混合检索 + RRF 融合
+
+#### 3. 本地大模型显存溢出
+- **问题**：7B 模型运行时显存不足崩溃
+- **原因**：模型未量化，硬件配置不足
+- **解决**：4bit 量化 + 降低上下文长度 + 在线 API 兜底
+
+#### 4. Milvus 容器连接失败
+- **问题**：Docker 启动后项目无法连接 Milvus
+- **原因**：端口映射错误，容器网络不通
+- **解决**：修改 docker-compose 网络配置，添加健康检查
 
 ---
 
@@ -367,288 +216,83 @@ python demo_end_to_end.py
 
 ```
 rag-enterprise-system/
+├── main.py                    # FastAPI 入口
+├── config.py                  # 全局配置（模型地址、向量库配置等）
+├── requirements.txt           # 依赖列表
+├── docker-compose.yml         # Docker 部署配置
+├── Dockerfile                 # 项目镜像构建
 ├── src/
-│   ├── api/middleware/          # 服务保护中间件
-│   │   ├── circuit_breaker.py   # 熔断器（400+行，完整实现）
-│   │   └── rate_limit.py        # 限流器（200+行，完整实现）
-│   ├── ingestion/               # 数据接入层
-│   │   ├── document_parser.py   # 文档解析（600+行，多格式支持）
-│   │   └── parent_child_chunker.py  # 父子分块（420+行）
-│   ├── evaluation/              # 评估层
-│   │   └── metrics.py           # 检索指标（300+行，Recall/MRR/NDCG）
-│   ├── retrieval/               # 检索层
-│   │   └── hybrid_search.py     # 混合检索（350+行，RRF融合）
-│   ├── services/                # 服务层
-│   │   ├── embedding_service.py # 向量化（400+行，BGE+ChromaDB）
-│   │   └── llm_service.py       # LLM服务（500+行，本地+API）
-│   └── rag/                     # RAG核心
-│       └── query_rewriter.py    # 查询改写（250+行，Multi-Query+HyDE）
-├── tests/unit/                  # 单元测试
-│   ├── test_circuit_breaker.py  # 熔断器测试
-│   ├── test_rate_limit.py       # 限流器测试
-│   └── test_parent_child_chunker.py  # 分块测试
-├── demo_end_to_end.py           # 端到端演示脚本
-├── quickstart.py                # 核心模块快速测试
-├── requirements.txt             # 依赖管理
-└── README.md                    # 项目说明
+│   ├── document/             # 文档处理模块
+│   │   ├── parser.py         # PDF/DOCX/TXT 解析
+│   │   └── chunker.py        # 语义分块
+│   ├── vector/               # 向量数据库模块
+│   │   ├── base.py           # 抽象基类
+│   │   └── milvus_store.py   # Milvus 实现
+│   ├── llm/                  # 大模型接入
+│   │   ├── base.py           # 抽象基类
+│   │   ├── local_model.py    # 本地模型
+│   │   └── api_model.py      # 在线 API
+│   ├── rag/                  # RAG 核心
+│   │   ├── retriever.py      # Hybrid 检索
+│   │   ├── query_rewriter.py # 查询改写
+│   │   └── generator.py      # 生成回答
+│   ├── api/                  # 接口服务
+│   │   └── routes.py         # FastAPI 路由
+│   └── utils/                # 工具函数
+├── tests/                    # 测试文件
+└── docs/
+    ├── DEVELOP_PIT.md        # 踩坑复盘文档
+    └── COMMIT_REFACTOR.md    # 项目迭代记录
 ```
 
 ---
 
-## 学习建议：怎么用这个项目的代码
+## 项目迭代记录
 
-### 场景一：准备面试
+见 [COMMIT_REFACTOR.md](./COMMIT_REFACTOR.md)
 
-如果你正在准备RAG相关的技术面试，可以重点看这几个文件：
-
-1. `src/api/middleware/circuit_breaker.py` - 熔断器状态机
-2. `src/ingestion/parent_child_chunker.py` - 父子分块策略
-3. `src/evaluation/metrics.py` - 检索评估指标
-
-
-### 场景二：学习架构设计
-
-如果你想理解企业级RAG系统的模块划分，可以看：
-
-- 目录结构如何组织
-- 模块之间的接口如何定义
-- 配置和实现的分离
-
+- **v1.0 → v2.0**：从玩具 Demo 整改为全流程实战 Demo
+- 精简冗余技术栈，聚焦核心 RAG 功能
+- 新增踩坑复盘文档，体现问题解决能力
 
 ---
 
-## 技术博客
+## 求职展示建议
 
-项目配套的技术文章：
+### 演示重点
 
-- [熔断器与限流器：大模型服务的稳定性设计](blog/01-circuit-breaker-rate-limit.md)
+1. **功能闭环**：展示完整的文档上传→问答流程
+2. **技术深度**：讲解 Hybrid 检索、Prompt 工程、幻觉检测
+3. **问题解决**：重点讲 3-4 个踩坑案例的解决过程
+4. **诚实性**：明确说明是 Demo 而非生产级，体现技术诚实
 
-文章特点：基于真实代码讲解，包含面试可谈的技术细节。
+### 话术示例
 
----
-
-## 相关文档
-
-| 文档 | 说明 |
-|------|------|
-| [REALITY_CHECK.md](REALITY_CHECK.md) | 项目真实状态检查，说明哪些模块是完整实现，哪些是骨架代码 |
-| [EXPERIMENTS.md](EXPERIMENTS.md) | 实验记录模板 |
+> "这是一个我独立开发的 RAG Demo，实现了从文档处理到大模型生成的完整流程。
+> 过程中遇到了 PDF 乱码、检索精度低、显存溢出等问题，通过语义分块、混合检索、模型量化等方法解决。
+> 项目为单机版 Demo，功能完整但非企业级，后续可扩展为分布式系统。"
 
 ---
 
-## 模块详细说明
+## 已知局限性
 
-### 服务保护中间件（api/middleware/）
+1. **单机版**：非分布式，不支持高并发
+2. **基础格式**：仅支持 PDF/DOCX/TXT，不支持多模态
+3. **简单监控**：仅控制台日志，无专业监控大盘
+4. **基础幻觉检测**：仅文本相似度匹配，非深度语义验证
 
-生产环境的核心稳定性保障。
-
-**熔断器**（`circuit_breaker.py`）：
-- 三态状态机：CLOSED/OPEN/HALF_OPEN
-- 自动故障检测和恢复
-- 线程安全实现
-- 使用示例见上文
-
-**限流器**（`rate_limit.py`）：
-- Token Bucket算法
-- 支持突发流量
-- 可配置rate和capacity
-- 使用示例见上文
-
-### 数据接入层（ingestion/）
-
-**文档解析**（`document_parser.py`）：
-- 支持格式：PDF（pypdf）、Word（python-docx）、Markdown、TXT
-- 语义分块：优先在标题、段落边界切分
-- 滑动窗口：保持上下文连续性
-- 多编码支持：UTF-8、GBK、Latin-1自动检测
-- 代码行数：600+
-
-**父子分块**（`parent_child_chunker.py`）：
-- Parent-Child策略解决检索粒度矛盾
-- 子块小精度高，父块大上下文完整
-- ID关联机制
-- 代码行数：420+
-
-### 检索层（retrieval/）
-
-**混合检索**（`hybrid_search.py`）：
-- DenseRetriever：基于ChromaDB的向量检索
-- BM25Retriever：基于Whoosh的稀疏检索
-- HybridRetriever：RRF融合，可配置权重
-- 代码行数：350+
-
-### RAG核心（rag/）
-
-**查询改写**（`query_rewriter.py`）：
-- Multi-Query：生成多个查询变体
-- HyDE：生成假设答案再检索
-- 支持LLM增强（可选）
-- 代码行数：250+
-
-### 服务层（services/）
-
-**向量化服务**（`embedding_service.py`）：
-- EmbeddingService：BGE模型编码
-- VectorStore：ChromaDB封装
-- RAGIngestionPipeline：文档入库Pipeline
-- 支持批量编码、归一化、查询指令
-- 代码行数：400+
-
-**LLM服务**（`llm_service.py`）：
-- LocalLLM：transformers本地模型（Qwen等）
-- APILLM：OpenAI格式API
-- RAGGenerator：支持引用溯源的生成器
-- 基础幻觉检测
-- 代码行数：500+
-
-### 评估层（evaluation/）
-
-**评估指标**（`metrics.py`）：
-- Recall@K：召回率
-- Precision@K：精确率
-- MRR：平均倒数排名
-- MAP：平均精度均值
-- NDCG@K：归一化折损累积增益
-- 代码行数：300+
+**后续优化方向**：分布式部署、多模态支持、高级幻觉检测
 
 ---
 
-## 代码统计
+## 相关链接
 
-```bash
-find src -name "*.py" | xargs wc -l
-```
-
-| 模块 | 代码行数 | 测试状态 | 依赖要求 |
-|------|---------|----------|---------|
-| 熔断器 | ~400 | 单元测试通过 | 无 |
-| 限流器 | ~200 | 单元测试通过 | 无 |
-| 父子分块 | ~420 | 单元测试通过 | 无 |
-| 评估指标 | ~300 | 单元测试通过 | 可选numpy |
-| 文档解析 | ~600 | 可运行 | pypdf, python-docx（可选） |
-| 向量化服务 | ~400 | 可运行 | torch, sentence-transformers, chromadb（可选） |
-| 混合检索 | ~350 | 可运行 | whoosh（可选） |
-| 查询改写 | ~250 | 可运行 | 无 |
-| LLM服务 | ~500 | 可运行 | transformers, openai（可选） |
-
-**总计**：约3400行Python代码
+- **项目地址**：https://github.com/JX-76/rag-enterprise-system
+- **Milvus 文档**：https://milvus.io/docs
+- **LangChain 文档**：https://python.langchain.com
 
 ---
 
-## 🚀 快速启动
+> 工具的价值在于使用。运行起来，踩坑复盘，才是你的实战经验。
 
-### 方式一：Docker Compose（推荐）
-
-```bash
-# 1. 克隆项目
-git clone https://github.com/JX-76/rag-enterprise-system.git
-cd rag-enterprise-system
-
-# 2. 配置环境变量
-cp .env.example .env
-# 编辑 .env 填入你的 OpenAI API Key
-
-# 3. 启动服务
-docker-compose up -d
-
-# 4. 访问服务
-# API: http://localhost:8000
-# 文档: http://localhost:8000/docs
-# Grafana: http://localhost:3000 (admin/admin)
-```
-
-### 方式二：本地运行
-
-```bash
-# 1. 安装依赖
-pip install -r requirements-full.txt
-
-# 2. 配置环境变量
-export OPENAI_API_KEY=sk-your-key
-
-# 3. 启动服务
-python -m src.api.main
-
-# 4. 测试
-python quickstart.py
-```
-
-### 方式三：LangChain集成
-
-```python
-from examples.langchain_integration import CustomRAGPipeline
-
-# 创建Pipeline
-pipeline = CustomRAGPipeline(
-    embedding_model="BAAI/bge-small-zh-v1.5",
-    llm_model="gpt-3.5-turbo",
-    use_custom_chunker=True  # 使用本项目的父子分块
-)
-
-# 接入文档
-pipeline.ingest_documents(["你的文档内容"])
-
-# 查询
-result = pipeline.query("你的问题")
-print(result["answer"])
-```
-
----
-
-## 🔗 与主流框架的关系
-
-本项目**不是**为了替代LangChain/LlamaIndex，而是**补充和深化**。
-
-### 为什么需要自定义实现？
-
-| 场景 | LangChain默认 | 本项目定制 |
-|------|--------------|-----------|
-| 熔断保护 | ❌ 无内置 | ✅ 三态状态机 |
-| 父子分块 | ❌ 无关联ID | ✅ Parent-Child关联 |
-| RRF融合 | ✅ 有 | ✅ 更灵活权重控制 |
-| 评估指标 | ✅ Ragas | ✅ 手写计算逻辑 |
-
-### 使用方式
-
-**推荐模式**：LangChain快速搭建 + 本项目深度定制
-
-```python
-# 1. 用LangChain快速搭建原型
-from langchain import OpenAI
-from langchain.vectorstores import Chroma
-
-# 2. 用本项目优化核心模块
-from src.ingestion.parent_child_chunker import ParentChildChunker
-from src.api.middleware.circuit_breaker import CircuitBreaker
-
-# 3. 组合使用
-chunker = ParentChildChunker()  # 自定义分块
-docs = chunker.chunk(text)
-# ... 转换为LangChain Document继续流程
-```
-
-详见 [examples/langchain_integration.py](examples/langchain_integration.py)
-
----
-
-## 📚 API文档
-
-启动服务后访问：
-- Swagger UI: http://localhost:8000/docs
-- ReDoc: http://localhost:8000/redoc
-
-主要接口：
-- `POST /ingest` - 文档接入
-- `POST /query` - 智能查询
-- `GET /health` - 健康检查
-- `GET /metrics` - Prometheus指标
-
----
-
-## License
-
-MIT License
-
----
-
-这个项目是个人学习RAG系统的代码记录。如果代码对你有帮助，欢迎Star。如果发现代码有问题，欢迎提Issue指正。
+*Version: v2.0 | 求职实战版 | 2026-04-08*

@@ -1,65 +1,55 @@
-# Core Framework
-fastapi>=0.104.0
-uvicorn[standard]>=0.24.0
-gunicorn>=21.0.0
-pydantic>=2.5.0
-pydantic-settings>=2.1.0
-python-dotenv>=1.0.0
+# RAG Demo 精简依赖
+# 聚焦核心功能，删除冗余组件
 
-# API & Web
-starlette>=0.27.0
-httpx>=0.25.0
-aiohttp>=3.9.0
+# Web 框架
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+python-multipart==0.0.6
 
-# Vector Search (Optional)
-faiss-cpu>=1.7.4; platform_machine=='x86_64'
-hnswlib>=0.8.0
-numpy>=1.24.0
-scipy>=1.11.0
+# RAG 框架
+langchain==0.1.0
+langchain-community==0.0.13
+langchain-openai==0.0.5
 
-# Embeddings & ML (Optional)
-sentence-transformers>=2.2.0
-transformers>=4.36.0
-torch>=2.1.0
-huggingface-hub>=0.19.0
-tokenizers>=0.15.0
+# 向量数据库
+pymilvus==2.3.6
 
-# LLM Clients (Optional)
-openai>=1.6.0
+# Embedding 模型
+sentence-transformers==2.2.2
 
-# Vector Store (Optional)
-chromadb>=0.4.0
+# 文档解析
+pypdf==3.17.4
+python-docx==1.1.0
+pdfplumber==0.10.4
 
-# Document Parsing (Optional)
-pypdf>=4.0.0
-python-docx>=1.1.0
-beautifulsoup4>=4.12.0
+# 数据处理
+numpy==1.26.3
+pandas==2.1.4
 
-# Sparse Retrieval (Optional)
-whoosh>=2.7.0
+# 文本处理
+tiktoken==0.5.2
+rank-bm25==0.2.2
+jieba==0.42.1
 
-# Caching (Optional)
-redis>=5.0.0
+# HTTP 客户端
+httpx==0.26.0
+aiohttp==3.9.1
 
-# Data Processing
-pandas>=2.1.0
-python-multipart>=0.0.6
+# 配置管理
+pydantic==2.5.3
+pydantic-settings==2.1.0
+python-dotenv==1.0.0
 
-# Monitoring & Logging
-prometheus-client>=0.19.0
-structlog>=23.2.0
-python-json-logger>=2.0.0
+# 数据库
+sqlalchemy==2.0.25
+aiosqlite==0.19.0
 
-# Testing
-pytest>=7.4.0
-pytest-asyncio>=0.21.0
-pytest-cov>=4.1.0
+# 工具库
+tqdm==4.66.1
+python-jose[cryptography]==3.3.0
 
-# Visualization
-matplotlib>=3.8.0
-
-# Utilities
-pyyaml>=6.0.0
-watchdog>=3.0.0
-aiofiles>=23.2.0
-tenacity>=8.2.0
+# 注意：已删除以下冗余依赖
+# - celery, redis, flower（改为同步任务）
+# - psycopg2（改为 SQLite）
+# - prometheus-client, grafana-api（改为控制台日志）
+# - kubernetes, helm（改为单机 Docker）
