@@ -7,22 +7,22 @@ Memory 四层架构模块
 全局记忆：企业公共知识（向量数据库）
 """
 # 使用相对导入，需要作为包导入
-# from .memory_manager import MemoryManager
-# from .memory_types import (
-#     Memory,
-#     UltraShortTermMemory,
-#     ShortTermMemory,
-#     LongTermMemory,
-#     GlobalMemory,
-#     MemoryLayer
-# )
+from .memory_manager import MemoryManager
+from .memory_types import (
+    Memory,
+    UltraShortTermMemory,
+    ShortTermMemory,
+    LongTermMemory,
+    GlobalMemory,
+    MemoryLayer
+)
 
-# __all__ = [
-#     'MemoryManager',
-#     'Memory',
-#     'UltraShortTermMemory',
-#     'ShortTermMemory',
-#     'LongTermMemory',
-#     'GlobalMemory',
-#     'MemoryLayer'
-# ]
+__all__ = [
+    'MemoryManager',
+    'Memory',
+    'UltraShortTermMemory',
+    'ShortTermMemory',
+    'LongTermMemory',
+    'GlobalMemory',
+    'MemoryLayer'
+]

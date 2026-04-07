@@ -1,0 +1,28 @@
+{
+  "timestamp": "2026-04-07T14:48:21.964943",
+  "total_tests": 4,
+  "passed": 2,
+  "failed": 2,
+  "results": [
+    {
+      "name": "文档入库",
+      "success": false,
+      "metric": 0.04406404495239258
+    },
+    {
+      "name": "查询检索",
+      "success": false,
+      "metric": 0.0005649725596110026
+    },
+    {
+      "name": "多轮对话",
+      "success": true,
+      "metric": 0.00012218952178955078
+    },
+    {
+      "name": "性能基准",
+      "success": true,
+      "metric": 6.310939788818359e-05
+    }
+  ]
+}
