@@ -1,5 +1,5 @@
-{"id": "q009", "query": "这个项目目前哪些模块被明确降级为 Experimental / Optional？", "rewrite": "请解释该项目目前哪些模块被明确降级为 Experimental / Optional？，重点覆盖：tenancy、ab_testing", "source": "repo_grounded_eval_v1", "category": "scope", "difficulty": "medium"}
-{"id": "q024", "query": "什么样的指标才算 resume-safe？", "rewrite": "请解释什么样的指标才算 resume-safe？，并指出它与检索效果或评测指标的关系，重点覆盖：真实可检查数据集、清晰 baseline", "source": "repo_grounded_eval_v1", "category": "evaluation", "difficulty": "hard"}
+{"id": "q009", "query": "项目中哪些模块被定义为实验性（Experimental）或可选（Optional）？", "rewrite": "请解释该项目目前哪些模块被明确降级为 Experimental / Optional？，重点覆盖：tenancy、ab_testing", "source": "repo_grounded_eval_v1", "category": "scope", "difficulty": "medium"}
+{"id": "q024", "query": "在评估 RAG 系统时，哪些指标能最真实地反映系统性能与检索质量？", "rewrite": "请解释在评估 RAG 系统时，哪些指标能最真实地反映系统性能与检索质量？，并指出它与检索效果或评测指标的关系，重点覆盖：真实可检查数据集、清晰 baseline", "source": "repo_grounded_eval_v1", "category": "evaluation", "difficulty": "hard"}
 {"id": "q001", "query": "这个项目的官方 API 入口是什么？", "rewrite": "请解释该项目的官方 API 入口是什么？，并说明它在系统接入或运行流程中的位置，重点覆盖：src.main:app", "source": "repo_grounded_eval_v1", "category": "api", "difficulty": "easy"}
 {"id": "q004", "query": "为什么这个项目不把自己定义成泛企业级平台？", "rewrite": "请详细说明为什么该项目不把自己定义成泛企业级平台？，并说明它在项目架构或定位中的作用，重点覆盖：聚焦检索质量优化、AI 应用工程化", "source": "repo_grounded_eval_v1", "category": "positioning", "difficulty": "medium"}
 {"id": "q021", "query": "当前评估体系应该至少覆盖哪些指标？", "rewrite": "请详细说明当前评估体系应该至少覆盖哪些指标？，并指出它与检索效果或评测指标的关系，重点覆盖：Recall@K、MRR", "source": "repo_grounded_eval_v1", "category": "evaluation", "difficulty": "medium"}
