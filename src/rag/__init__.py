@@ -1,5 +1,7 @@
-"""Legacy RAG aggregation package retained for compatibility; prefer `src.core` + `src.retrieval` + `src.generation` for the canonical architecture narrative."""
-from .retriever import HybridRetriever, create_retriever
-from .generator import RAGGenerator
+"""Legacy RAG aggregation package retained for compatibility.
 
-__all__ = ['HybridRetriever', 'create_retriever', 'RAGGenerator']
+Do not eagerly import submodules here; some historical modules have optional or
+fragile dependencies. Import concrete symbols from submodules when needed.
+"""
+
+__all__ = []
