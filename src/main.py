@@ -1,6 +1,6 @@
 """
-Enterprise RAG System - Main Entry Point
-工业级RAG系统主入口
+Modular RAG System - Main API Entry
+项目主 API 入口
 """
 import asyncio
 import uvicorn
@@ -23,23 +23,21 @@ logger = get_logger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期管理"""
-    # 启动
-    logger.info("Starting Enterprise RAG System...")
+    logger.info("Starting Modular RAG System...")
     app.state.cache = CacheManager()
     app.state.start_time = time.time()
     logger.info("✓ Cache initialized")
-    
+
     yield
-    
-    # 关闭
-    logger.info("Shutting down Enterprise RAG System...")
+
+    logger.info("Shutting down Modular RAG System...")
     await app.state.cache.close()
     logger.info("✓ Cache closed")
 
 
 app = FastAPI(
-    title="Enterprise RAG System",
-    description="工业级检索增强生成系统",
+    title="Modular RAG System",
+    description="面向 AI 应用开发的模块化 RAG 系统",
     version="1.0.0",
     lifespan=lifespan
 )
@@ -60,22 +58,19 @@ async def add_request_metadata(request: Request, call_next):
     start_time = time.time()
     request_id = str(uuid.uuid4())
     request.state.request_id = request_id
-    
-    # 记录请求
+
     logger.info(f"[{request_id}] {request.method} {request.url.path}")
-    
+
     response = await call_next(request)
-    
-    # 计算耗时
+
     process_time = (time.time() - start_time) * 1000
     response.headers["X-Request-ID"] = request_id
     response.headers["X-Process-Time"] = f"{process_time:.2f}ms"
-    
-    # 记录指标
+
     metrics.record_request(request.url.path, response.status_code, process_time)
-    
+
     logger.info(f"[{request_id}] Completed in {process_time:.2f}ms")
-    
+
     return response
 
 
@@ -84,7 +79,7 @@ async def global_exception_handler(request: Request, exc: Exception):
     """全局异常处理"""
     request_id = getattr(request.state, 'request_id', 'unknown')
     logger.error(f"[{request_id}] Unhandled exception: {exc}", exc_info=True)
-    
+
     return JSONResponse(
         status_code=500,
         content={

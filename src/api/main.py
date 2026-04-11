@@ -113,7 +113,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
-    description="企业级RAG系统 - 支持文档接入、智能检索、LLM生成",
+    description="历史 FastAPI 入口（兼容保留，不作为官方主入口）",
     lifespan=lifespan
 )
 
