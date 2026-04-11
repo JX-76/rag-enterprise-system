@@ -3,7 +3,7 @@
 ## 快速开始
 
 ```python
-from rag.pipeline import DefaultRAGPipeline, RAGConfig
+from src.rag.pipeline import DefaultRAGPipeline, RAGConfig
 
 # 创建Pipeline
 config = RAGConfig(chunk_size=500, top_k=10)
@@ -24,6 +24,12 @@ result = pipeline.chat(
     use_memory=True
 )
 ```
+
+## 服务入口约定
+
+- **官方 API 入口**：`src.main:app`
+- **兼容启动器**：根目录 `main.py`
+- **演示脚本**：`examples/demo_quickstart.py`、`examples/demo_end_to_end.py`
 
 ## 核心类
 

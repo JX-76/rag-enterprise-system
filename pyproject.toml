@@ -5,11 +5,11 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "rag-enterprise-system"
 version = "1.0.0"
-description = "Enterprise-grade Retrieval-Augmented Generation System"
+description = "Modular RAG system focused on retrieval quality optimization and AI application engineering"
 readme = "README.md"
 license = {file = "LICENSE"}
 authors = [
-    {name = "Your Name", email = "your.email@example.com"}
+    {name = "JX-76", email = "2257816066@qq.com"}
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -48,10 +48,10 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourname/rag-enterprise-system"
-Documentation = "https://rag-enterprise.readthedocs.io"
-Repository = "https://github.com/yourname/rag-enterprise-system"
-Issues = "https://github.com/yourname/rag-enterprise-system/issues"
+Homepage = "https://github.com/JX-76/rag-enterprise-system"
+Documentation = "https://github.com/JX-76/rag-enterprise-system/tree/main/docs"
+Repository = "https://github.com/JX-76/rag-enterprise-system"
+Issues = "https://github.com/JX-76/rag-enterprise-system/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]

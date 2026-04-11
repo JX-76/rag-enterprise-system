@@ -123,7 +123,7 @@ LOG_LEVEL=DEBUG
 python test_all.py
 
 # 运行快速演示
-python quickstart.py
+python examples/demo_quickstart.py
 
 # 启动开发服务器
 make run
