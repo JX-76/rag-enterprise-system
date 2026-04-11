@@ -12,6 +12,10 @@
    - FastAPI API 层
    - Middleware / Logging / Metrics
    - 可运行、可调试、可解释的主链路
+3. **RAG + 定向微调（Fine-tuning）演进方向**
+   - 优先做**小模型 / 子模块级微调**，而不是空喊“大模型全量微调”
+   - 重点考虑：Query Rewrite 小模型、Reranker / Embedding 适配、领域回答风格 SFT
+   - 目标是让项目更贴近当前“RAG + 微调”岗位预期，同时保持可 defend
 
 ---
 

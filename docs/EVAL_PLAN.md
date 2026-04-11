@@ -105,6 +105,28 @@ Compare:
 
 Report the same metrics and the latency increase.
 
+### Experiment E — RAG vs RAG + Fine-tuning
+This is the new strategic experiment if the project is positioned toward current hiring expectations.
+
+Recommended realistic variants:
+- baseline RAG
+- RAG + **fine-tuned query rewrite model**
+- RAG + **fine-tuned reranker / embedding adaptation**
+- optional: RAG + answer-style SFT (only if data quality is good enough)
+
+Why this direction:
+- easier to defend than pretending to fully fine-tune a large generator
+- closer to real product trade-offs
+- keeps the project grounded in measurable retrieval improvements
+
+Report:
+- Recall@1 / 3 / 5
+- MRR
+- NDCG@5
+- avg latency / p95 latency
+- if applicable: answer relevance / hallucination trend
+- training cost / inference overhead / trade-off notes
+
 ---
 
 ## Resume-Safe Metric Types
