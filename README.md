@@ -151,6 +151,7 @@ Document Ingestion
 
 > 注：仓库中仍保留部分实验性目录和历史结构，后续会继续收束。
 > 当前建议按以下主干理解项目。
+> 更详细的 canonical / legacy 说明见：`docs/STRUCTURE_GUIDE.md`
 
 ```text
 rag-enterprise-system/
@@ -169,6 +170,12 @@ rag-enterprise-system/
 ├── docker-compose.yml       # 本地依赖启动
 └── README.md
 ```
+
+### 当前不建议作为主线理解的历史目录
+- `src/document/` → 建议统一按 `src/ingestion/` 理解
+- `src/vector/` → 建议统一按 `src/vector_store/` / 存储层理解
+- `src/rag/` → 更适合作为历史聚合层或 orchestration 过渡层理解
+- `src/api/main.py` → 历史入口，官方入口已统一到 `src.main:app`
 
 ---
 

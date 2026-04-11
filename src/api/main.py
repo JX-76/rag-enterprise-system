@@ -1,6 +1,11 @@
 """
-FastAPI 主应用
-企业级API入口，集成所有模块
+Legacy FastAPI entry retained for compatibility and reference.
+
+Status:
+- Not the official API entry anymore
+- Official entry is `src.main:app`
+- This file should be treated as a historical / experimental path,
+  not the primary interview-facing application entry
 """
 import time
 from typing import List, Optional
