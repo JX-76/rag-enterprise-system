@@ -2,7 +2,7 @@
 
 ## Goal
 
-Add a **real, lightweight, resume-defensible fine-tuning branch** to the project without bloating it into a fake large-model training platform.
+Add a **real, lightweight, project-defensible fine-tuning branch** to the project without bloating it into a fake large-model training platform.
 
 The default target is:
 - **Query Rewrite Fine-tuning**
@@ -121,7 +121,7 @@ Example row:
 ### Why
 - low training cost
 - realistic for a personal project
-- good enough to support a resume story
+- good enough to support a project story
 - easier to run than large generator fine-tuning
 
 ---

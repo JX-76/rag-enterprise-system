@@ -1,6 +1,6 @@
 # Archived Development Notes
 
-These files are preserved for historical context and iteration traceability, but are **not** part of the repository's primary interview-facing documentation.
+These files are preserved for historical context and iteration traceability, but are **not** part of the repository's primary primary public documentation.
 
 Primary docs to read first:
 - `README.md`

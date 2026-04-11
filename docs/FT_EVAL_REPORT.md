@@ -83,7 +83,7 @@ At least 5 cases:
 
 ## Conclusion
 
-Use this section for a resume-safe summary, for example:
+Use this section for a public-safe summary, for example:
 
 > Under a fixed modular RAG baseline, adding a fine-tuned query rewrite module improved retrieval metrics on the repo-grounded eval set while introducing limited inference overhead.
 

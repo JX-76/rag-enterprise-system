@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 快速实验 - 5分钟跑完一组对比
-适合面试前快速验证某个想法
+适合快速验证某个想法
 
 用法:
     python scripts/quick_experiment.py

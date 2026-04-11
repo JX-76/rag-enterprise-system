@@ -4,7 +4,7 @@
 
 This review focuses on one question:
 
-> Is this repository already strong enough to be presented as a **real, resume-worthy modular RAG project** for AI application / LLM application roles?
+> Is this repository already strong enough to be presented as a **real, public-release-worthy modular RAG project** for AI application / LLM application roles?
 
 Short answer:
 - **Yes, at the architecture / engineering narrative level**
@@ -32,7 +32,7 @@ Short answer:
    - generation
    - API exposure
 
-3. **Repository structure is much more interview-friendly**
+3. **Repository structure is much more presentation-friendly**
    - official API entry is unified to `src.main:app`
    - example scripts are centralized under `examples/`
    - noisy process docs were moved to `docs/archive/`
@@ -46,13 +46,13 @@ Short answer:
 
 ---
 
-## What can already be written on a resume
+## What can already be written on a public result
 
-### Resume-safe today
+### Public-safe today
 
 These statements are currently defensible:
 
-- Refactored a multi-module RAG repository into a **modular interview-ready RAG system** centered on retrieval quality optimization and AI application engineering.
+- Refactored a multi-module RAG repository into a **modular presentation-ready RAG system** centered on retrieval quality optimization and AI application engineering.
 - Unified the repository around a clearer main path: **ingestion → rewrite → hybrid retrieval → rerank → generation → API**.
 - Consolidated the official API entry to **one primary entrypoint**: `src.main:app`.
 - Moved noisy root-level process docs into `docs/archive/` and added clearer architectural guidance (`ROADMAP.md`, `STRUCTURE_GUIDE.md`).
@@ -85,7 +85,7 @@ Already verified in the current environment:
 
 ## What should NOT be written yet
 
-These would currently be too risky to put on a resume as hard claims:
+These would currently be too risky to put on a public result as hard claims:
 
 1. **Hard retrieval quality numbers from existing benchmark/sample files**
    - current benchmark assets still include sample/mock fallback logic
@@ -93,7 +93,7 @@ These would currently be too risky to put on a resume as hard claims:
 
 2. **Production-grade claims**
    - do not claim production-ready multi-tenancy / RBAC / hot reload / workflow reliability
-   - these areas exist in the repository, but they are not the safest interview-facing claims
+   - these areas exist in the repository, but they are not the safest public-facing claims
 
 3. **Aggressive performance claims**
    - avoid claiming high QPS / low latency / online serving guarantees
@@ -103,13 +103,13 @@ These would currently be too risky to put on a resume as hard claims:
 
 ## Main Risks Still Present
 
-### Risk 1: Evaluation is not resume-safe yet
+### Risk 1: Evaluation is not public result-safe yet
 Current benchmark / experiment assets are mixed with:
 - sample data
 - mock fallback logic
 - dependency-sensitive execution paths
 
-This means the repo can show **evaluation intent**, but not yet a fully reliable **resume-grade effect report**.
+This means the repo can show **evaluation intent**, but not yet a fully reliable **public result-grade effect report**.
 
 ### Risk 2: Historical modules still exist alongside the canonical path
 Even though the docs now explain canonical vs legacy paths, the codebase still contains:
@@ -118,7 +118,7 @@ Even though the docs now explain canonical vs legacy paths, the codebase still c
 - `src/rag/`
 - `src/api/main.py`
 
-This is acceptable now, but still a source of interview follow-up questions.
+This is acceptable now, but still a source of follow-up questions.
 
 ### Risk 3: Some scripts remain partially brittle
 A few benchmark/evaluation paths still depend on optional packages or old import paths.
@@ -158,7 +158,7 @@ That is fixable, but should not be hidden.
 
 ## Resume-Ready Metric Standard
 
-A metric is safe to use on a resume only if it satisfies all of the following:
+A metric is safe to use on a public result only if it satisfies all of the following:
 
 1. Uses a **real, inspectable eval set**
 2. Has a clearly defined **baseline**
@@ -170,7 +170,7 @@ A metric is safe to use on a resume only if it satisfies all of the following:
    - what exactly changed?
    - what got worse while something improved?
 
-If a metric cannot survive those five questions, it should not go on the resume.
+If a metric cannot survive those five questions, it should not go on the public result.
 
 ---
 
@@ -195,11 +195,11 @@ Avoid presenting it as:
 ### Current overall status
 - **Architecture / narrative**: strong
 - **Repository cleanliness**: strong
-- **Interview defensibility**: much better than before
+- **Presentation defensibility**: much better than before
 - **Evaluation maturity**: still needs one more serious pass
 
 ### Recommendation
 
-This repository is now good enough to present as a **real modular RAG project**, but to make it a **strong resume project with concrete effect claims**, the next milestone must be:
+This repository is now good enough to present as a **real modular RAG project**, but to make it a **strong public result project with concrete effect claims**, the next milestone must be:
 
 > a real labeled evaluation set + reproducible ablation results + a short effect report

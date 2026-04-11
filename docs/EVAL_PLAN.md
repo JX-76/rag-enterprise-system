@@ -2,7 +2,7 @@
 
 ## Goal
 
-Produce **resume-safe** and **interview-defensible** evaluation results for this repository.
+Produce **public-safe** and **publicly-defensible** evaluation results for this repository.
 
 The target is not to generate pretty numbers.
 The target is to generate numbers that can survive follow-up questions.
@@ -189,7 +189,7 @@ For each experiment, preserve at least 5 bad cases:
   - chunk lost context
 - takeaway
 
-These bad cases are extremely useful in interviews.
+These bad cases are extremely useful in technical reviews.
 
 ---
 

@@ -31,7 +31,7 @@ Possible setup:
 - LoRA / QLoRA style adaptation
 - training data = query → rewritten query / multi-query variants / normalized intent form
 
-Resume-safe value:
+Project-grade value:
 - "Built a retrieval-oriented fine-tuning branch by adapting a small rewrite model and measuring gains on Recall@5 / MRR under a fixed RAG baseline."
 
 ### Priority 2 — Fine-tuned Reranker or Embedding Adaptation
@@ -47,7 +47,7 @@ Possible setup:
 - contrastive or ranking loss
 - compare against untuned dense / reranker baseline
 
-Resume-safe value:
+Project-grade value:
 - "Fine-tuned retrieval-side ranking components to improve top-k relevance and reduce missed relevant chunks."
 
 ### Priority 3 — Answer-style / domain-style SFT
@@ -56,7 +56,7 @@ This is optional, not first priority.
 Why lower priority:
 - easier to make look fake if data quality is weak
 - harder to prove actual improvement beyond style
-- more vulnerable to interview follow-up
+- more vulnerable to technical follow-up
 
 Use only if:
 - the instruction data is clean
@@ -106,7 +106,7 @@ For each variant, report:
 
 ---
 
-## Best interview narrative
+## Best public narrative
 
 The strongest realistic story is:
 

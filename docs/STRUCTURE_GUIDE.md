@@ -2,7 +2,7 @@
 
 ## Canonical vs Legacy Paths
 
-为了兼顾当前仓库可运行性和面试可讲清楚性，项目采用如下理解方式：
+为了兼顾当前仓库可运行性和公开说明清晰性，项目采用如下理解方式：
 
 ### 建议按这些主路径理解项目（Canonical）
 - `src/api/`：API 路由与中间件
@@ -24,7 +24,7 @@
   - 当前更推荐按 `src/vector_store/` 理解向量存储
 - `src/rag/`
   - 含 pipeline / generator / query_rewriter 等历史聚合实现
-  - 建议面试叙事中按 `core + retrieval + generation` 理解主链路
+  - 建议在公开技术叙事中按 `core + retrieval + generation` 理解主链路
 - `src/api/main.py`
   - 历史 FastAPI 入口
   - 官方 API 入口已收束为 `src.main:app`
@@ -44,7 +44,7 @@
 这样做的原因：
 - 避免一次性大改导致示例、测试、导入路径全部断裂
 - 保留历史实现，方便回溯与渐进迁移
-- 面试叙事先稳定，再做代码结构硬收束
+- 先稳定公开技术叙事，再做代码结构硬收束
 
 ---
 
@@ -66,9 +66,9 @@
 
 ---
 
-## 面试时建议怎么说
+## 对外说明建议
 
-推荐说法：
+推荐表述：
 
 > 仓库里保留了一些历史目录和实验性实现，但当前我会按 ingestion / retrieval / rerank / generation / api 这条主线来解释项目。
 > 也就是说，我先把“可讲清楚、可 defend 的主链路”定住，再逐步收束历史结构。
