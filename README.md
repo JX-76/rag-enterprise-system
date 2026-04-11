@@ -92,6 +92,12 @@ Document Ingestion
 - AB Testing
 - Memory / Workflow 等扩展能力
 
+> 当前仓库中以下目录**保留但默认降权**，主要用于实验、扩展或历史探索，不属于建议面试演示的主链路：
+> `src/tenancy/`、`src/ab_testing/`、`src/hot_reload/`、`src/agent/`、`src/memory/`、`src/workflow/`、`src/security/rbac.py`
+>
+> 如果面试中提到这些内容，建议表述为：
+> **“仓库中保留了部分扩展性尝试，但当前主打与可 defend 的核心仍是 chunking / rewrite / hybrid retrieval / rerank / API 工程化。”**
+
 ### 4.3 Planned / Future Work（规划中）
 这些能力更适合作为后续演进方向，而不是当前声称“已成熟落地”的内容：
 
