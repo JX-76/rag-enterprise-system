@@ -1,0 +1,219 @@
+{
+  "meta": {
+    "eval_rows": 30,
+    "corpus_docs": 11,
+    "retriever": "bm25-lite lexical retrieval",
+    "baseline": "original query",
+    "variant": "ft rewrite query",
+    "note": "Repo-grounded first-pass evaluation on an inspectable local corpus."
+  },
+  "baseline": {
+    "recall": {
+      "1": 0.2722,
+      "3": 0.6611,
+      "5": 0.75
+    },
+    "precision": {
+      "1": 0.5667,
+      "3": 0.4667,
+      "5": 0.3267
+    },
+    "mrr": 0.7145,
+    "map": 0.6395,
+    "ndcg@5": 0.6682,
+    "latency_ms": {
+      "avg": 1.016,
+      "p95": 1.074
+    }
+  },
+  "ft_rewrite": {
+    "recall": {
+      "1": 0.3278,
+      "3": 0.6722,
+      "5": 0.7722
+    },
+    "precision": {
+      "1": 0.6667,
+      "3": 0.4778,
+      "5": 0.34
+    },
+    "mrr": 0.7745,
+    "map": 0.7231,
+    "ndcg@5": 0.726,
+    "latency_ms": {
+      "avg": 1.291,
+      "p95": 1.418
+    }
+  },
+  "deltas": {
+    "recall@1": 0.0556,
+    "recall@3": 0.0111,
+    "recall@5": 0.0222,
+    "precision@1": 0.1,
+    "precision@3": 0.0111,
+    "precision@5": 0.0133,
+    "mrr": 0.06,
+    "map": 0.0836,
+    "ndcg@5": 0.0578,
+    "avg_latency_ms": 0.275,
+    "p95_latency_ms": 0.344
+  },
+  "top_improvements": [
+    {
+      "id": "q010",
+      "query": "为什么建议将实验性模块与核心实现路径分开说明？",
+      "delta_recall@5": 0.33333333333333337,
+      "delta_mrr": 0.0
+    },
+    {
+      "id": "q028",
+      "query": "这个项目接下来最关键的里程碑是什么？",
+      "delta_recall@5": 0.3333333333333333,
+      "delta_mrr": 0.08333333333333334
+    },
+    {
+      "id": "q002",
+      "query": "根目录 main.py 在当前仓库里扮演什么角色？",
+      "delta_recall@5": 0.0,
+      "delta_mrr": 0.6666666666666667
+    },
+    {
+      "id": "q006",
+      "query": "Hybrid Retrieval 在这个项目里的作用是什么？",
+      "delta_recall@5": 0.0,
+      "delta_mrr": 0.5
+    },
+    {
+      "id": "q007",
+      "query": "Query Rewrite 的设计动机是什么？",
+      "delta_recall@5": 0.0,
+      "delta_mrr": 0.5
+    }
+  ],
+  "bad_cases": [
+    {
+      "id": "q001",
+      "query": "这个项目的官方 API 入口是什么？",
+      "expected_docs": [
+        "src/main.py",
+        "README.md",
+        "API.md"
+      ],
+      "baseline_top5": [
+        "README.md",
+        "docs/REPO_REFACTOR_PLAN.md",
+        "ARCHITECTURE.md",
+        "API.md",
+        "docs/STRUCTURE_GUIDE.md"
+      ],
+      "ft_top5": [
+        "README.md",
+        "ARCHITECTURE.md",
+        "docs/REPO_REFACTOR_PLAN.md",
+        "API.md",
+        "docs/STRUCTURE_GUIDE.md"
+      ],
+      "baseline_recall@5": 0.6666666666666666,
+      "ft_recall@5": 0.6666666666666666
+    },
+    {
+      "id": "q002",
+      "query": "根目录 main.py 在当前仓库里扮演什么角色？",
+      "expected_docs": [
+        "main.py",
+        "README.md",
+        "API.md"
+      ],
+      "baseline_top5": [
+        "docs/REPO_REFACTOR_PLAN.md",
+        "docs/STRUCTURE_GUIDE.md",
+        "API.md",
+        "README.md",
+        "docs/ROADMAP.md"
+      ],
+      "ft_top5": [
+        "README.md",
+        "API.md",
+        "docs/REPO_REFACTOR_PLAN.md",
+        "docs/STRUCTURE_GUIDE.md",
+        "ARCHITECTURE.md"
+      ],
+      "baseline_recall@5": 0.6666666666666666,
+      "ft_recall@5": 0.6666666666666666
+    },
+    {
+      "id": "q010",
+      "query": "为什么建议将实验性模块与核心实现路径分开说明？",
+      "expected_docs": [
+        "README.md",
+        "ARCHITECTURE.md",
+        "docs/ROADMAP.md"
+      ],
+      "baseline_top5": [
+        "README.md",
+        "docs/REPO_REFACTOR_PLAN.md",
+        "ARCHITECTURE.md",
+        "docs/STRUCTURE_GUIDE.md",
+        "API.md"
+      ],
+      "ft_top5": [
+        "ARCHITECTURE.md",
+        "README.md",
+        "docs/REPO_REFACTOR_PLAN.md",
+        "docs/STRUCTURE_GUIDE.md",
+        "docs/ROADMAP.md"
+      ],
+      "baseline_recall@5": 0.6666666666666666,
+      "ft_recall@5": 1.0
+    },
+    {
+      "id": "q021",
+      "query": "当前评估体系应该至少覆盖哪些指标？",
+      "expected_docs": [
+        "ARCHITECTURE.md",
+        "docs/REPO_REFACTOR_PLAN.md",
+        "docs/EVAL_PLAN.md"
+      ],
+      "baseline_top5": [
+        "ARCHITECTURE.md",
+        "README.md",
+        "docs/REPO_REFACTOR_PLAN.md",
+        "docs/ROADMAP.md",
+        "DEPLOYMENT.md"
+      ],
+      "ft_top5": [
+        "README.md",
+        "ARCHITECTURE.md",
+        "docs/REPO_REFACTOR_PLAN.md",
+        "docs/ROADMAP.md",
+        "DEPLOYMENT.md"
+      ],
+      "baseline_recall@5": 0.6666666666666666,
+      "ft_recall@5": 0.6666666666666666
+    },
+    {
+      "id": "q022",
+      "query": "为什么在 RAG 优化过程中需要建立基线（Baseline）并进行消融实验（Ablation）？",
+      "expected_docs": [
+        "docs/EVAL_PLAN.md",
+        "docs/PROJECT_REVIEW.md"
+      ],
+      "baseline_top5": [
+        "README.md",
+        "ARCHITECTURE.md",
+        "docs/REPO_REFACTOR_PLAN.md",
+        "docs/ROADMAP.md",
+        "API.md"
+      ],
+      "ft_top5": [
+        "README.md",
+        "ARCHITECTURE.md",
+        "docs/REPO_REFACTOR_PLAN.md",
+        "docs/ROADMAP.md",
+        "docs/STRUCTURE_GUIDE.md"
+      ],
+      "baseline_recall@5": 0.0,
+      "ft_recall@5": 0.0
+    }
+  ]
+}
