@@ -1,0 +1,18 @@
+# Optional training dependencies for LoRA / QLoRA experiments
+#
+# Typical usage:
+#   pip install -r requirements-train.txt
+#
+# Notes:
+# - bitsandbytes is optional and mainly useful on Linux GPU environments
+# - CPU smoke runs do not require bitsandbytes, but still require torch/transformers/peft
+
+torch>=2.2,<2.6
+transformers>=4.39,<5.0
+datasets>=2.18,<3.0
+peft>=0.10,<1.0
+accelerate>=0.28,<1.0
+safetensors>=0.4.2
+sentencepiece>=0.1.99
+scipy>=1.10
+bitsandbytes>=0.43; platform_system == "Linux" and platform_machine == "x86_64"

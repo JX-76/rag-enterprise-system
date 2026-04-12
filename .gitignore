@@ -147,6 +147,7 @@ data/milvus/
 models/
 logs/
 experiments_resume/
+artifacts/ft/
 
 # OS
 .DS_Store

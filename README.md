@@ -242,7 +242,32 @@ python examples/demo_quickstart.py
 python examples/demo_end_to_end.py
 ```
 
-### 9.5 查看接口文档
+### 9.5 本地 LoRA 训练入口
+
+如果你希望在本地继续补齐 Query Rewrite LoRA 这条线，项目当前已经提供：
+- 训练脚本：`scripts/train_rewrite_lora.py`
+- 训练依赖：`requirements-train.txt`
+- 本地运行说明：`docs/LOCAL_LORA_RUN.md`
+
+推荐顺序：
+
+```bash
+# 1) 安装训练依赖
+pip install -r requirements-train.txt
+
+# 2) 先检查配置和数据
+python scripts/train_rewrite_lora.py --dry-run
+
+# 3) 本地 CPU smoke run
+python scripts/train_rewrite_lora.py --profile smoke-cpu
+```
+
+说明：
+- `smoke-cpu` 用于本地 CPU 环境验证训练链路能否跑通
+- `formal` 配置面向更强本地环境或 GPU 环境
+- 正式训练完成后，可结合 `scripts/eval_retrieval.py` 做 baseline vs FT variant 对照分析
+
+### 9.6 查看接口文档
 
 ```text
 http://localhost:8000/docs
