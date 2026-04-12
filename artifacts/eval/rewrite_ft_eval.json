@@ -31,31 +31,31 @@
       "id": "q001",
       "query": "这个项目的官方 API 入口是什么？",
       "baseline_rewrite": "这个项目的官方 API 入口是什么？",
-      "ft_rewrite": "请解释该项目的官方 API 入口是什么？，并说明它在系统接入或运行流程中的位置，重点覆盖：src.main:app"
+      "ft_rewrite": "从检索优化角度解释该项目的官方 API 入口是什么？，并说明它在系统接入或运行流程中的位置，重点覆盖：src.main:app"
     },
     {
       "id": "q004",
       "query": "为什么这个项目不把自己定义成泛企业级平台？",
       "baseline_rewrite": "为什么这个项目不把自己定义成泛企业级平台？",
-      "ft_rewrite": "请详细说明为什么该项目不把自己定义成泛企业级平台？，并说明它在项目架构或定位中的作用，重点覆盖：聚焦检索质量优化、AI 应用工程化"
+      "ft_rewrite": "从系统设计角度解释为什么该项目不把自己定义成泛企业级平台？，并说明它在项目架构或定位中的作用，重点覆盖：聚焦检索质量优化、AI 应用工程化"
     },
     {
       "id": "q009",
-      "query": "这个项目目前哪些模块被明确降级为 Experimental / Optional？",
-      "baseline_rewrite": "这个项目目前哪些模块被明确降级为 Experimental / Optional？",
-      "ft_rewrite": "请解释该项目目前哪些模块被明确降级为 Experimental / Optional？，重点覆盖：tenancy、ab_testing"
+      "query": "项目中哪些模块被定义为实验性（Experimental）或可选（Optional）？",
+      "baseline_rewrite": "项目中哪些模块被定义为实验性（Experimental）或可选（Optional）？",
+      "ft_rewrite": "请详细说明项目中哪些模块被定义为实验性（Experimental）或可选（Optional）？，重点覆盖：tenancy、ab_testing"
     },
     {
       "id": "q021",
       "query": "当前评估体系应该至少覆盖哪些指标？",
       "baseline_rewrite": "当前评估体系应该至少覆盖哪些指标？",
-      "ft_rewrite": "请详细说明当前评估体系应该至少覆盖哪些指标？，并指出它与检索效果或评测指标的关系，重点覆盖：Recall@K、MRR"
+      "ft_rewrite": "从检索优化角度解释当前评估体系应该至少覆盖哪些指标？，并指出它与检索效果或评测指标的关系，重点覆盖：Recall@K、MRR"
     },
     {
       "id": "q024",
-      "query": "什么样的指标才算 resume-safe？",
-      "baseline_rewrite": "什么样的指标才算 resume-safe？",
-      "ft_rewrite": "请解释什么样的指标才算 resume-safe？，并指出它与检索效果或评测指标的关系，重点覆盖：真实可检查数据集、清晰 baseline"
+      "query": "在评估 RAG 系统时，哪些指标能最真实地反映系统性能与检索质量？",
+      "baseline_rewrite": "在评估 RAG 系统时，哪些指标能最真实地反映系统性能与检索质量？",
+      "ft_rewrite": "请解释在评估 RAG 系统时，哪些指标能最真实地反映系统性能与检索质量？，并指出它与检索效果或评测指标的关系，重点覆盖：真实可检查数据集、清晰 baseline"
     }
   ]
 }

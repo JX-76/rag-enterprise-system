@@ -191,7 +191,7 @@ ls experiments/
 
 ---
 
-## 💡 面试谈资整理
+## 💡 技术复盘要点
 
 ### 你的项目比别人强在哪？
 
@@ -202,7 +202,7 @@ ls experiments/
 > embedding模型我对比了4个，没选效果最好的BGE-large（太慢），选了GTE-large，
 > 召回只低2%但速度快30%，这是工程上的trade-off决策。
 > 
-> 这些实验都记录在项目的EXPERIMENTS.md里，每次面试前我都会更新。"
+> 这些实验都记录在项目的 EXPERIMENTS.md 里，方便后续复盘、比较和补充真实评测。"
 
 ### 遇到的真实问题
 

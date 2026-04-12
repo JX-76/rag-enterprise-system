@@ -146,6 +146,7 @@ data/chroma/
 data/milvus/
 models/
 logs/
+experiments_resume/
 
 # OS
 .DS_Store

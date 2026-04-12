@@ -5,7 +5,7 @@ Status:
 - Not the official API entry anymore
 - Official entry is `src.main:app`
 - This file should be treated as a historical / experimental path,
-  not the primary interview-facing application entry
+  not the primary public-facing application entry
 """
 import time
 from typing import List, Optional

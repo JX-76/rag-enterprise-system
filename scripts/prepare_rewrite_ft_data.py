@@ -31,6 +31,29 @@ PREFIX_RULES = [
     "从系统设计角度解释",
 ]
 
+AUGMENT_PREFIXES = [
+    "帮我讲讲",
+    "简单说下",
+    "想确认一下",
+    "我想知道",
+]
+
+CASUAL_REPLACEMENTS = [
+    ("这个项目", "项目里"),
+    ("该项目", "项目里"),
+    ("如何", "怎么"),
+    ("为什么", "为啥"),
+    ("是什么", "是啥"),
+    ("包含哪些", "包括哪些"),
+    ("当前", "现在"),
+    ("当前版本", "现在这个版本"),
+    ("当前仓库", "现在仓库"),
+    ("当前主打", "现在主打"),
+    ("当前评估体系", "现在评估体系"),
+    ("当前项目", "现在项目"),
+    ("推荐", "建议"),
+]
+
 
 def normalize_query(q: str) -> str:
     q = q.strip().replace("这个项目", "该项目")
@@ -59,38 +82,72 @@ def build_rewrite(sample: dict) -> str:
     return f"{prefix}{query}{suffix}"
 
 
+def build_augmented_query(query: str, idx: int) -> str:
+    casual = query.strip()
+    for old, new in CASUAL_REPLACEMENTS:
+        casual = casual.replace(old, new)
+    if not casual.endswith("？"):
+        casual = casual.rstrip("。") + "？"
+    prefix = AUGMENT_PREFIXES[idx % len(AUGMENT_PREFIXES)]
+    return f"{prefix}{casual}"
+
+
+def make_row(sample: dict) -> dict:
+    return {
+        "id": sample["id"],
+        "query": sample["query"],
+        "rewrite": build_rewrite(sample),
+        "source": "repo_grounded_eval_v1",
+        "category": sample.get("category", "general"),
+        "difficulty": sample.get("difficulty", "medium"),
+    }
+
+
+def make_augmented_row(sample: dict, idx: int) -> dict:
+    base = make_row(sample)
+    base["id"] = f"{sample['id']}_aug{idx + 1}"
+    base["query"] = build_augmented_query(sample["query"], idx)
+    base["source"] = "repo_grounded_eval_v1_augmented"
+    return base
+
+
 def main() -> None:
     if not SRC.exists():
         raise FileNotFoundError(f"Missing source eval file: {SRC}")
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    rows = []
+    samples = []
     with SRC.open("r", encoding="utf-8") as f:
         for line in f:
             if not line.strip():
                 continue
             sample = json.loads(line)
-            rows.append({
-                "id": sample["id"],
-                "query": sample["query"],
-                "rewrite": build_rewrite(sample),
-                "source": "repo_grounded_eval_v1",
-                "category": sample.get("category", "general"),
-                "difficulty": sample.get("difficulty", "medium"),
-            })
+            samples.append(sample)
 
     random.seed(42)
-    random.shuffle(rows)
+    random.shuffle(samples)
 
-    n = len(rows)
+    n = len(samples)
     train_end = int(n * 0.7)
     dev_end = int(n * 0.85)
 
+    train_samples = samples[:train_end]
+    dev_samples = samples[train_end:dev_end]
+    test_samples = samples[dev_end:]
+
+    train_rows = [make_row(sample) for sample in train_samples]
+    train_rows += [make_augmented_row(sample, idx=0) for sample in train_samples]
+
+    dev_rows = [make_row(sample) for sample in dev_samples]
+    dev_rows += [make_augmented_row(sample, idx=1) for sample in dev_samples]
+
+    test_rows = [make_row(sample) for sample in test_samples]
+
     splits = {
-        "rewrite_train.jsonl": rows[:train_end],
-        "rewrite_dev.jsonl": rows[train_end:dev_end],
-        "rewrite_test.jsonl": rows[dev_end:],
+        "rewrite_train.jsonl": train_rows,
+        "rewrite_dev.jsonl": dev_rows,
+        "rewrite_test.jsonl": test_rows,
     }
 
     for name, data in splits.items():
