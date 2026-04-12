@@ -12,6 +12,8 @@ However, the safe version of that story is **not**:
 The safe version is:
 
 > Keep the repository centered on a strong modular RAG baseline, then add one or two **targeted fine-tuning components** that produce measurable improvements.
+>
+> In practice, any **large-model-facing path** that remains in the public project story should be paired with at least one **lightweight fine-tuning branch**; otherwise the fine-tuning story is incomplete.
 
 ---
 

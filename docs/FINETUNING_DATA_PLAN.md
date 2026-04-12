@@ -4,6 +4,10 @@
 
 Add a **real, lightweight, project-defensible fine-tuning branch** to the project without bloating it into a fake large-model training platform.
 
+Default principle:
+- for every **large-model-facing path** kept in the project narrative, define at least one **lightweight, measurable fine-tuning companion branch**
+- prioritize retrieval-side or rerank-side FT before claiming generator-side full fine-tuning
+
 The default target is:
 - **Query Rewrite Fine-tuning**
 
