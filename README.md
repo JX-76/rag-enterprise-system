@@ -1,26 +1,28 @@
 # 模块化 RAG 系统
 
-> 面向检索质量优化与工程落地的模块化 RAG 项目
+> 面向检索优化、执行可观测性与工程落地的 **production-oriented modular RAG** 项目
 > 
-> 核心目标：**优化检索质量**，同时体现 **AI 应用工程化能力**。
+> 核心目标：**把检索增强链路做深**，同时补齐 **routing / trace / support-aware fallback** 这类更接近 2026 工程要求的能力。
 >
-> 当前更适合公开技术展示的重点是：**主链路清晰、模块边界明确、评测口径可补齐**，而不是提前宣称未经验证的线上效果。
+> 当前仓库更适合公开展示的重点是：**主链路清晰、执行边界可解释、评测口径可补齐、对 Agent / Harness 方向有自然扩展路径**，而不是提前宣称未经验证的线上效果。
 
 ---
 
 ## 1. 项目定位
 
-这是一个**可插拔、可扩展的模块化 RAG 系统**，重点不在“堆满企业级 buzzword”，而在于把一条完整的 RAG 主链路做扎实，并围绕检索质量优化和工程落地进行设计。
+这是一个**可插拔、可扩展的模块化 RAG 系统**，重点不在“堆满企业级 buzzword”，而在于把一条完整的检索增强主链路做扎实，并围绕检索质量优化、执行可观测性和工程落地进行设计。
 
-项目主要解决两个问题：
+项目主要解决三个问题：
 
 1. **检索质量问题**：如何通过分块、查询改写、混合检索和重排提高召回与命中质量。
-2. **应用落地问题**：如何把 RAG 方案组织成一个可运行、可调参、可观测、可扩展的 AI 应用系统。
+2. **执行边界问题**：如何在检索/生成前加入轻量 routing，在输出侧补齐 trace、support 和 fallback，让系统更可解释、更可调试。
+3. **应用落地问题**：如何把 RAG 方案组织成一个可运行、可调参、可观测、可扩展的 AI 应用系统。
 
 适用于以下场景：
 - 需要构建可解释、可扩展 RAG 主链路的应用系统
 - 需要围绕 chunking / rewrite / retrieval / rerank 做检索优化实验
 - 需要以 API 形式交付和评估 RAG 能力的工程场景
+- 需要为后续 Agent / Harness 式任务执行扩展保留清晰接入边界
 
 ---
 
@@ -32,17 +34,23 @@
 - **Query Rewriting**：支持 HyDE、Query Expansion、Multi-Query 等策略，提高召回鲁棒性。
 - **Three-Stage Reranking**：分阶段过滤候选结果，在效果和延迟之间做平衡。
 
-### 2.2 模块化工程设计
+### 2.2 轻量执行边界（Harness-adjacent）
+- **Lightweight Query Router**：在 rewrite / retrieve / generate 前，先对请求进行轻量任务判断，区分 exact lookup、summarization、complex reasoning、tool-candidate 等路径。
+- **Structured Execution Trace**：输出 route / rewrite / retrieve / rerank / generate 各阶段结构化 trace，便于调试、演示和评测。
+- **Support-aware Fallback**：当检索证据不足时返回低支持度信号和降级结果，而不是无依据强答。
+
+### 2.3 模块化工程设计
 - API、检索、重排、生成、评估模块解耦。
 - 检索链路可插拔，便于替换不同向量库、Embedding 模型和 Reranker。
 - 支持本地模型与 OpenAI 兼容 API 双模式接入。
 
-### 2.3 应用工程化能力
+### 2.4 应用工程化能力
 - FastAPI 服务化封装。
 - 基础中间件能力：限流、熔断、请求级追踪。
 - 基础监控与评估接口，便于后续做 benchmark 和效果对比。
+- 查询响应结构中可显式输出 route / support / trace 元数据，而不只是最终答案字符串。
 
-### 2.4 Fine-tuning Workflow
+### 2.5 Fine-tuning Workflow
 - 提供面向检索侧优化的轻量微调轨道，优先支持 **Query Rewrite LoRA / QLoRA**。
 - 对于仓库中接入的**大模型链路**，建议默认配套至少一条**可解释、轻量、可评测的微调分支**；优先落在检索侧或重排侧，而不是空喊生成模型全量微调。
 - 提供微调数据规划、训练脚手架与评测模板，便于在保持主链路稳定的前提下做增量优化。
@@ -58,19 +66,24 @@
 Document Ingestion
   -> Chunking
   -> Embedding / Indexing
-  -> Query Rewrite
+
+User Query
+  -> Lightweight Query Routing
+  -> Query Rewrite (conditional)
   -> Hybrid Retrieval
   -> Reranking
   -> Context Construction
   -> LLM Generation
-  -> Response with Sources
+  -> Response with Sources / Support / Trace
 ```
 
 对应能力说明：
 - **摄取阶段**：文档解析、切块、索引构建。
+- **路由阶段**：识别 query 类型，决定是否启用 rewrite、推荐 top-k 和后续路径。
 - **检索阶段**：改写 query、并行检索、多路结果融合。
 - **排序阶段**：对候选文档进行精排与压缩。
 - **生成阶段**：基于检索结果构造上下文并生成答案。
+- **输出阶段**：返回答案、引用来源、support 信号和结构化 trace。
 - **服务阶段**：通过 API、日志、指标将能力暴露为应用系统。
 
 ---
@@ -87,6 +100,9 @@ Document Ingestion
 - Hybrid Retrieval
 - Query Rewriting（基础策略）
 - Three-Stage Reranking
+- Lightweight Query Routing
+- Structured Execution Trace
+- Support-aware Fallback
 - FastAPI 查询与检索接口
 - 基础中间件：限流、熔断、请求追踪
 - 基础监控与评估模块
@@ -104,7 +120,7 @@ Document Ingestion
 > `src/tenancy/`、`src/ab_testing/`、`src/hot_reload/`、`src/agent/`、`src/memory/`、`src/workflow/`、`src/security/rbac.py`
 >
 > 如果需要解释这些内容，建议表述为：
-> **“仓库中保留了部分扩展性尝试，但当前主打与可 defend 的核心仍是 chunking / rewrite / hybrid retrieval / rerank / API 工程化。”**
+> **“仓库中保留了部分扩展性尝试，但当前主打与可 defend 的核心仍是 routing / rewrite / hybrid retrieval / rerank / trace / API 工程化。”**
 
 ### 4.3 Planned / Future Work（规划中）
 这些能力更适合作为后续演进方向，而不是当前声称“已成熟落地”的内容：
@@ -113,6 +129,8 @@ Document Ingestion
 - 完整鉴权 / 权限体系
 - 更完善的线上评估与自动回归机制
 - 更规范的生产部署模板
+- retrieval-debug 视图 / debug mode
+- 更明确的 tool/workflow execution envelope
 
 ---
 

@@ -2,9 +2,10 @@
 Health Check Routes - 健康检查路由
 """
 import time
-from fastapi import APIRouter, status
-from pydantic import BaseModel
 from typing import Dict, Any
+
+from fastapi import APIRouter, Request
+from pydantic import BaseModel
 
 router = APIRouter()
 
@@ -24,12 +25,11 @@ class ReadyResponse(BaseModel):
 
 
 @router.get("", response_model=HealthResponse)
-async def health_check(request):
+async def health_check(request: Request):
     """健康检查端点"""
-    from src.main import app
-    
+    app = request.app
     uptime = time.time() - getattr(app.state, 'start_time', time.time())
-    
+
     return HealthResponse(
         status="healthy",
         version="1.0.0",
@@ -47,9 +47,9 @@ async def ready_check():
         "cache": True,  # 简化处理
         "vector_store": True
     }
-    
+
     all_ready = all(checks.values())
-    
+
     return ReadyResponse(
         ready=all_ready,
         checks=checks
