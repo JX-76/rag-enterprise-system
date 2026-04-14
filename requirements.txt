@@ -45,11 +45,12 @@ sqlalchemy==2.0.25
 aiosqlite==0.19.0
 
 # 工具库
+aiofiles==23.2.1
+prometheus-client==0.19.0
 tqdm==4.66.1
 python-jose[cryptography]==3.3.0
 
 # 注意：已删除以下冗余依赖
 # - celery, redis, flower（改为同步任务）
 # - psycopg2（改为 SQLite）
-# - prometheus-client, grafana-api（改为控制台日志）
 # - kubernetes, helm（改为单机 Docker）
