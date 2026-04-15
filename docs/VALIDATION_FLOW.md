@@ -9,6 +9,33 @@
 
 ---
 
+## 0. 无服务 smoke run（推荐先跑）
+
+如果你只是想快速确认验证链路本身没有坏，可以先执行：
+
+```bash
+python scripts/run_validation_smoke.py
+```
+
+它会直接通过 `TestClient` 调用：
+- `/api/v1/query/review`
+- `/api/v1/query/trace-summary`
+- `/api/v1/eval/lightweight`
+- `/api/v1/eval/badcases`
+
+并把结果写入：
+- `artifacts/eval/smoke_review_output.json`
+- `artifacts/eval/smoke_trace_output.json`
+- `artifacts/eval/smoke_eval_output.json`
+- `artifacts/eval/smoke_badcases_output.json`
+
+这个步骤适合：
+- 改完接口后快速冒烟
+- 不想先起服务时做结构验证
+- 上传前再确认一遍输出结构
+
+---
+
 ## 1. 推荐验证顺序
 
 ### 第一步：启动服务
