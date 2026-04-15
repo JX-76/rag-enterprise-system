@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 import time
 import uuid
 
-from src.api.routes import retrieval, query, health
+from src.api.routes import evaluation, retrieval, query, health
 from src.core.config import settings
 from src.core.logging import setup_logging, get_logger
 from src.core.monitoring import metrics
@@ -93,6 +93,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 app.include_router(health.router, prefix="/health", tags=["Health"])
 app.include_router(retrieval.router, prefix="/api/v1/retrieve", tags=["Retrieval"])
 app.include_router(query.router, prefix="/api/v1/query", tags=["Query"])
+app.include_router(evaluation.router, prefix="/api/v1/eval", tags=["Evaluation"])
 
 
 if __name__ == "__main__":

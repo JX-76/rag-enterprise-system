@@ -13,6 +13,7 @@ from src.core.rag_engine import RAGEngine
 from src.core.logging import get_logger
 from src.core.monitoring import metrics
 from src.core.retrieval_filters import RetrievalAccessContext
+from src.utils.review import build_review_view, summarize_trace
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -82,7 +83,7 @@ class QueryResponse(BaseModel):
 class RAGService:
     """RAG服务单例"""
     _instance = None
-    
+
     @classmethod
     def get_instance(cls):
         if cls._instance is None:
@@ -145,7 +146,7 @@ async def query(
 ):
     """
     完整RAG问答接口
-    
+
     流程：
     1. 轻量 Query Routing
     2. 查询改写 (按路由决定是否启用)
@@ -157,7 +158,7 @@ async def query(
     """
     request_id = getattr(request.state, 'request_id', 'unknown')
     start_time = time.time()
-    
+
     logger.info(f"[{request_id}] Query: {query_request.query}")
 
     if query_request.stream:
@@ -169,11 +170,11 @@ async def query(
                 "Connection": "keep-alive",
             },
         )
-    
+
     try:
         engine = RAGService.get_instance()
         access_context = _build_access_context(query_request)
-        
+
         result = await engine.query(
             query=query_request.query,
             conversation_id=query_request.conversation_id,
@@ -183,10 +184,10 @@ async def query(
             trace_id=request_id,
             access_context=access_context,
         )
-        
+
         latency = (time.time() - start_time) * 1000
         metrics.record_request("query", 200, latency)
-        
+
         return QueryResponse(
             query=query_request.query,
             answer=result["answer"],
@@ -198,7 +199,7 @@ async def query(
             support=SupportInfo(**result["support"]),
             trace=ExecutionTracePayload(**result["trace"]),
         )
-        
+
     except Exception as e:
         logger.error(f"[{request_id}] Query failed: {e}", exc_info=True)
         latency = (time.time() - start_time) * 1000
@@ -213,11 +214,11 @@ async def retrieve_only(
 ):
     """仅检索，不生成答案"""
     request_id = getattr(request.state, 'request_id', 'unknown')
-    
+
     try:
         engine = RAGService.get_instance()
         access_context = _build_access_context(query_request)
-        
+
         results = await engine.retrieve(
             query=query_request.query,
             top_k=query_request.top_k,
@@ -225,14 +226,66 @@ async def retrieve_only(
             rerank=query_request.rerank,
             access_context=access_context,
         )
-        
+
         return {
             "query": query_request.query,
             "results": results,
             "request_id": request_id,
             "access_context": access_context.to_dict(),
         }
-        
+
     except Exception as e:
         logger.error(f"[{request_id}] Retrieve failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/review")
+async def review_query(
+    request: Request,
+    query_request: QueryRequest
+):
+    """输出适合人工快速 review 的结果视图。"""
+    request_id = getattr(request.state, 'request_id', 'unknown')
+
+    try:
+        engine = RAGService.get_instance()
+        access_context = _build_access_context(query_request)
+        result = await engine.query(
+            query=query_request.query,
+            conversation_id=query_request.conversation_id,
+            top_k=query_request.top_k,
+            rewrite=query_request.rewrite,
+            rerank=query_request.rerank,
+            trace_id=request_id,
+            access_context=access_context,
+        )
+        return build_review_view(result)
+    except Exception as e:
+        logger.error(f"[{request_id}] Review failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/trace-summary")
+async def trace_summary(
+    request: Request,
+    query_request: QueryRequest
+):
+    """仅输出 trace 摘要，便于快速检查链路。"""
+    request_id = getattr(request.state, 'request_id', 'unknown')
+
+    try:
+        engine = RAGService.get_instance()
+        access_context = _build_access_context(query_request)
+        result = await engine.query(
+            query=query_request.query,
+            conversation_id=query_request.conversation_id,
+            top_k=query_request.top_k,
+            rewrite=query_request.rewrite,
+            rerank=query_request.rerank,
+            trace_id=request_id,
+            access_context=access_context,
+        )
+        return summarize_trace(result.get("trace", {}))
+    except Exception as e:
+        logger.error(f"[{request_id}] Trace summary failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

@@ -3,47 +3,46 @@ RAG Engine - 核心RAG引擎
 整合查询改写、多路检索、重排序、生成的完整流程
 """
 import time
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
 
-from src.retrieval.rewrite import QueryRewriter
-from src.retrieval.hybrid import HybridRetriever
-from src.rerank.three_stage import ThreeStageReranker
-from src.generation.generator import LLMGenerator
-from src.core.logging import get_logger
 from src.core.config import settings
+from src.core.execution_trace import ExecutionTrace, StageTrace
+from src.core.logging import get_logger
 from src.core.monitoring import metrics
 from src.core.query_router import LightweightQueryRouter
-from src.core.execution_trace import ExecutionTrace, StageTrace
 from src.core.retrieval_filters import RetrievalAccessContext, RetrievalFilterEngine
+from src.generation.generator import LLMGenerator
+from src.rerank.three_stage import ThreeStageReranker
+from src.retrieval.hybrid import HybridRetriever
+from src.retrieval.rewrite import QueryRewriter
 
 logger = get_logger(__name__)
 
 
 class RAGEngine:
     """企业级RAG引擎"""
-    
+
     def __init__(self):
-        """初始化RAG引擎组件"""
         logger.info("Initializing RAG Engine...")
-        
+
         self.router = LightweightQueryRouter()
         logger.info("✓ Query router initialized")
 
         self.rewriter = QueryRewriter()
         logger.info("✓ Query rewriter initialized")
-        
+
         self.retriever = HybridRetriever()
         logger.info("✓ Hybrid retriever initialized")
-        
+
         self.reranker = ThreeStageReranker()
         logger.info("✓ Three-stage reranker initialized")
-        
+
         self.generator = LLMGenerator()
         logger.info("✓ LLM generator initialized")
 
         self.filter_engine = RetrievalFilterEngine()
         logger.info("✓ Retrieval filter engine initialized")
-        
+
         logger.info("RAG Engine initialized successfully")
 
     def _normalize_results(self, results: List[Any]) -> List[Dict[str, Any]]:
@@ -77,6 +76,7 @@ class RAGEngine:
         logger.info(f"Processing query: {query}")
 
         route_decision = self.router.route(query)
+        metrics.record_route(route_decision.task_type, route_decision.route)
         effective_rewrite = rewrite and route_decision.rewrite_enabled
         effective_rerank = rerank and route_decision.rerank_enabled
         effective_top_k = min(max(top_k, 1), route_decision.recommended_top_k)
@@ -89,7 +89,7 @@ class RAGEngine:
             execution_trace.notes.append(
                 "Current pipeline remains retrieval-oriented; tool/workflow execution is marked as future harness expansion."
             )
-        
+
         rewrite_stage = StageTrace(stage="route_and_rewrite", started_at_ms=time.time() * 1000)
         execution_trace.add_stage(rewrite_stage)
         if effective_rewrite:
@@ -104,7 +104,7 @@ class RAGEngine:
             task_type=route_decision.task_type,
             route=route_decision.route,
         )
-        
+
         retrieval_stage = StageTrace(stage="retrieve", started_at_ms=time.time() * 1000)
         execution_trace.add_stage(retrieval_stage)
         retrieval_start = time.time()
@@ -128,7 +128,7 @@ class RAGEngine:
             queries=rewritten_queries[:5],
             access_context=access_context.to_dict() if access_context else {},
         )
-        
+
         final_results = filtered_results
         rerank_stage = StageTrace(stage="rerank", started_at_ms=time.time() * 1000)
         execution_trace.add_stage(rerank_stage)
@@ -146,8 +146,10 @@ class RAGEngine:
             rerank_stage.finish(enabled=True, before=len(filtered_results), after=len(final_results))
         else:
             rerank_stage.finish(enabled=False, before=len(filtered_results), after=len(final_results))
-        
+
         if len(final_results) == 0:
+            metrics.record_fallback("no_retrieval_results")
+            metrics.record_support_confidence(0.0)
             execution_trace.fallback_triggered = True
             execution_trace.notes.append("No retrieval evidence found; returned abstain-style fallback.")
             return {
@@ -162,9 +164,10 @@ class RAGEngine:
                     "has_support": False,
                     "confidence": 0.0,
                     "reason": "no_retrieval_results",
+                    "citations_count": 0,
                 },
             }
-        
+
         generation_stage = StageTrace(stage="generate", started_at_ms=time.time() * 1000)
         execution_trace.add_stage(generation_stage)
         generate_start = time.time()
@@ -177,7 +180,7 @@ class RAGEngine:
         logger.info(f"Generation completed in {generate_time:.2f}ms")
         metrics.generation_latency.observe(generate_time / 1000)
         generation_stage.finish(context_count=len(final_results))
-        
+
         total_time = (time.time() - start_time) * 1000
         logger.info(f"Total query processing time: {total_time:.2f}ms")
 
@@ -188,7 +191,8 @@ class RAGEngine:
             "reason": "retrieval_backed_generation",
             "citations_count": len(final_results),
         }
-        
+        metrics.record_support_confidence(support_confidence)
+
         return {
             "query": query,
             "answer": answer,
@@ -199,7 +203,7 @@ class RAGEngine:
             "trace": execution_trace.to_dict(),
             "support": support,
         }
-    
+
     async def retrieve(
         self,
         query: str,
@@ -209,6 +213,7 @@ class RAGEngine:
         access_context: Optional[RetrievalAccessContext] = None,
     ) -> List[Dict[str, Any]]:
         route_decision = self.router.route(query)
+        metrics.record_route(route_decision.task_type, route_decision.route)
         effective_rewrite = rewrite and route_decision.rewrite_enabled
         effective_rerank = rerank and route_decision.rerank_enabled
         effective_top_k = min(max(top_k, 1), route_decision.recommended_top_k)
@@ -224,9 +229,9 @@ class RAGEngine:
             results.extend(self._normalize_results(per_query_results))
 
         results = self.filter_engine.filter_results(results, access_context)
-        
+
         if effective_rerank and len(results) > 0:
             results = await self.reranker.rerank(query, results, effective_top_k)
             results = self._normalize_results(results)
-        
+
         return results

@@ -1,0 +1,14 @@
+[
+  {
+    "query": "系统支持哪些检索优化能力？",
+    "relevant_docs": ["doc_hybrid_retrieval", "doc_query_rewrite"]
+  },
+  {
+    "query": "当检索证据不足时，系统会怎么处理？",
+    "relevant_docs": ["doc_support_fallback"]
+  },
+  {
+    "query": "这个项目为什么要加入 structured execution trace？",
+    "relevant_docs": ["doc_execution_trace"]
+  }
+]

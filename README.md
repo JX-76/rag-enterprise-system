@@ -50,7 +50,14 @@
 - 基础监控与评估接口，便于后续做 benchmark 和效果对比。
 - 查询响应结构中可显式输出 route / support / trace 元数据，而不只是最终答案字符串。
 
-### 2.5 Fine-tuning Workflow
+### 2.5 轻量级验证与 review 能力
+- 支持 **lightweight evaluation**，用于快速验证主链路、support/fallback 与检索评估口径。
+- 支持 **badcase 提取**，优先定位 low-support / fallback / hallucination-risk 样本。
+- 支持 **review / trace-summary 视图**，便于人工快速查看 route、support、top sources 和 trace 摘要。
+- 默认强调“方向性验证”，不把小样本结果包装成正式对外指标。
+- 支持把验证结果自动落盘到 `artifacts/eval/`，方便保留每次迭代记录。
+
+### 2.6 Fine-tuning Workflow
 - 提供面向检索侧优化的轻量微调轨道，优先支持 **Query Rewrite LoRA / QLoRA**。
 - 对于仓库中接入的**大模型链路**，建议默认配套至少一条**可解释、轻量、可评测的微调分支**；优先落在检索侧或重排侧，而不是空喊生成模型全量微调。
 - 提供微调数据规划、训练脚手架与评测模板，便于在保持主链路稳定的前提下做增量优化。
@@ -104,6 +111,7 @@ User Query
 - Structured Execution Trace
 - Support-aware Fallback
 - FastAPI 查询与检索接口
+- 轻量级评测、badcase 抽取与 review 视图
 - 基础中间件：限流、熔断、请求追踪
 - 基础监控与评估模块
 
@@ -217,6 +225,9 @@ rag-enterprise-system/
 5. 展示 hybrid retrieval 结果
 6. 展示 rerank 后的候选变化
 7. 展示最终回答和引用来源
+8. 用 review / trace-summary 看 route、support 与阶段信息
+9. 用 lightweight eval / badcases 看方向性验证结果
+10. 查看 `artifacts/eval/` 中自动保存的验证结果
 
 ### 推荐关注点
 - 为什么选择 Hybrid Retrieval
@@ -224,6 +235,7 @@ rag-enterprise-system/
 - Parent-Child Chunking 解决了什么问题
 - Reranking 如何在效果和延迟间取舍
 - 项目如何从一个算法链路包装成 API 化应用系统
+- 为什么要把小样本验证和正式 benchmark 分开
 
 ---
 
@@ -285,7 +297,58 @@ python scripts/train_rewrite_lora.py --profile smoke-cpu
 - `formal` 配置面向更强本地环境或 GPU 环境
 - 正式训练完成后，可结合 `scripts/eval_retrieval.py` 做 baseline vs FT variant 对照分析
 
-### 9.6 查看接口文档
+### 9.6 轻量级验证与 badcase 分析
+
+```bash
+# 轻量级验证
+curl -X POST http://127.0.0.1:8000/api/v1/eval/lightweight \
+  -H 'Content-Type: application/json' \
+  -d @examples/lightweight_eval_request.json
+
+# 仅提取 badcases
+curl -X POST http://127.0.0.1:8000/api/v1/eval/badcases \
+  -H 'Content-Type: application/json' \
+  -d @examples/lightweight_eval_request.json
+```
+
+说明：
+- `examples/lightweight_eval_sample.json` 提供原始样本
+- `examples/lightweight_eval_request.json` 提供可直接调用的请求体
+- 当前结果默认标记为 **lightweight validation**，仅用于方向性判断
+- 默认会自动写入 `artifacts/eval/`
+
+### 9.7 review / trace 调试视图
+
+```bash
+# 快速 review 一个查询的 route / support / top sources / trace 摘要
+curl -X POST http://127.0.0.1:8000/api/v1/query/review \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "query": "系统支持哪些检索优化能力？",
+    "top_k": 5,
+    "rewrite": true,
+    "rerank": true
+  }'
+
+# 仅看 trace 摘要
+curl -X POST http://127.0.0.1:8000/api/v1/query/trace-summary \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "query": "当检索证据不足时系统会怎么处理？",
+    "top_k": 5,
+    "rewrite": true,
+    "rerank": true
+  }'
+
+# 本地生成一份 debug review 样例
+python scripts/debug_review_sample.py
+```
+
+说明：
+- `review` 视图会给出 `suspicion_flags`
+- `trace-summary` 会额外标出 `slowest_stage`
+
+### 9.8 查看接口文档
 
 ```text
 http://localhost:8000/docs
@@ -311,5 +374,6 @@ http://localhost:8000/docs
 - **一条完整且可解释的 RAG 主链路**
 - **检索质量优化的算法思路**
 - **能够落到 API 和工程结构上的应用开发能力**
+- **轻量验证、badcase 分析与 trace/review 的工程闭环**
 
 如果你希望项目同时体现 AI 应用开发与检索优化能力，这个方向会比“泛企业级大而全系统”更聚焦、更可信。
