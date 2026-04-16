@@ -34,6 +34,11 @@ QUERY_HINTS = {
     "fallback": ["support-aware fallback", "fallback", "低支持度", "证据不足", "强答", "support"],
     "trace": ["structured execution trace", "execution trace", "trace", "route", "rewrite", "retrieve", "rerank", "generate"],
 }
+DOC_HINTS = {
+    "retrieval": ["README.md", "ARCHITECTURE.md"],
+    "fallback": ["README.md", "ARCHITECTURE.md", "docs/AGENT_HARNESS_GAP_ANALYSIS.md", "docs/ROADMAP.md"],
+    "trace": ["README.md", "ARCHITECTURE.md", "docs/AGENT_HARNESS_GAP_ANALYSIS.md"],
+}
 
 
 @dataclass
@@ -149,6 +154,26 @@ def _expand_query_tokens(query: str) -> List[str]:
     return expanded
 
 
+def _preferred_docs_for_query(query: str) -> List[str]:
+    query_lower = query.lower()
+    preferred: List[str] = []
+
+    if any(key in query_lower for key in ["检索", "retrieval", "rewrite", "rerank"]):
+        preferred.extend(DOC_HINTS["retrieval"])
+    if any(key in query_lower for key in ["fallback", "证据不足", "低支持度", "支持度"]):
+        preferred.extend(DOC_HINTS["fallback"])
+    if any(key in query_lower for key in ["trace", "execution", "执行轨迹", "结构化"]):
+        preferred.extend(DOC_HINTS["trace"])
+
+    seen = set()
+    result = []
+    for doc_id in preferred:
+        if doc_id not in seen:
+            seen.add(doc_id)
+            result.append(doc_id)
+    return result
+
+
 @lru_cache(maxsize=1)
 def _load_fallback_corpus() -> List[Dict[str, str]]:
     corpus = []
@@ -210,6 +235,7 @@ def _build_excerpt(text: str, query_tokens: List[str], max_chars: int = 900) -> 
 
 async def _fallback_repo_search(query: str, top_k: int, source: str) -> List[RetrievalResult]:
     query_tokens = _expand_query_tokens(query)
+    preferred_docs = set(_preferred_docs_for_query(query))
     weighted_results: List[RetrievalResult] = []
 
     for entry in _load_fallback_corpus():
@@ -218,7 +244,10 @@ async def _fallback_repo_search(query: str, top_k: int, source: str) -> List[Ret
         if base_score <= 0:
             continue
 
+        doc_id = entry["id"]
         title = entry["title"].lower()
+        score = base_score
+
         if source == "dense":
             score = base_score * 1.05 + (0.08 if "architecture" in title or "readme" in title else 0.0)
         elif source == "sparse":
@@ -226,18 +255,28 @@ async def _fallback_repo_search(query: str, top_k: int, source: str) -> List[Ret
         else:  # bm25
             score = base_score + sum(1 for token in query_tokens if len(token) >= 2 and token in doc_text.lower()) * 0.02
 
+        if doc_id in preferred_docs:
+            score += 0.35
+        if "roadmap" in doc_id.lower() and any(k in query.lower() for k in ["fallback", "证据不足", "支持度"]):
+            score += 0.12
+        if "agent_harness_gap_analysis" in doc_id.lower() and any(k in query.lower() for k in ["trace", "execution", "结构化", "fallback", "证据不足"]):
+            score += 0.18
+
         excerpt = _build_excerpt(doc_text, query_tokens)
         weighted_results.append(
             RetrievalResult(
-                id=entry["id"],
+                id=doc_id,
                 content=excerpt,
                 score=float(score),
                 source=source,
-                metadata={"path": entry["id"], "title": entry["title"]},
+                metadata={"path": doc_id, "title": entry["title"]},
             )
         )
 
-    weighted_results.sort(key=lambda item: item.score, reverse=True)
+    weighted_results.sort(
+        key=lambda item: (item.score, item.metadata.get("path", ""), item.id),
+        reverse=True,
+    )
     return weighted_results[:top_k]
 
 
@@ -391,3 +430,4 @@ class HybridRetriever:
         )
 
         return fused_results[:top_k]
+
