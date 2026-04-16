@@ -62,6 +62,26 @@ class RAGEngine:
             )
         return normalized
 
+    def _deduplicate_results(self, results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        deduped: List[Dict[str, Any]] = []
+        seen_ids = set()
+        seen_content = set()
+
+        for item in results:
+            doc_id = item.get("id") or item.get("metadata", {}).get("path") or item.get("metadata", {}).get("source")
+            if doc_id:
+                if doc_id in seen_ids:
+                    continue
+                seen_ids.add(doc_id)
+            else:
+                content_key = (item.get("content", "") or "")[:200]
+                if content_key in seen_content:
+                    continue
+                seen_content.add(content_key)
+            deduped.append(item)
+
+        return deduped
+
     async def query(
         self,
         query: str,
@@ -79,7 +99,8 @@ class RAGEngine:
         metrics.record_route(route_decision.task_type, route_decision.route)
         effective_rewrite = rewrite and route_decision.rewrite_enabled
         effective_rerank = rerank and route_decision.rerank_enabled
-        effective_top_k = min(max(top_k, 1), route_decision.recommended_top_k)
+        generation_top_k = min(max(top_k, 1), route_decision.recommended_top_k)
+        retrieval_top_k = max(settings.RETRIEVAL_TOP_K, generation_top_k)
         execution_trace = ExecutionTrace(
             trace_id=trace_id or f"trace_{int(start_time * 1000)}",
             route=route_decision.to_dict(),
@@ -113,39 +134,44 @@ class RAGEngine:
         for rewritten_query in rewritten_queries:
             per_query_results = await self.retriever.retrieve(
                 query=rewritten_query,
-                top_k=settings.RETRIEVAL_TOP_K,
+                top_k=retrieval_top_k,
             )
             retrieval_results.extend(self._normalize_results(per_query_results))
 
         filtered_results = self.filter_engine.filter_results(retrieval_results, access_context)
+        deduped_results = self._deduplicate_results(filtered_results)
         retrieval_time = (time.time() - retrieval_start) * 1000
-        logger.info(f"Retrieval completed in {retrieval_time:.2f}ms, got {len(filtered_results)} filtered results")
+        logger.info(f"Retrieval completed in {retrieval_time:.2f}ms, got {len(deduped_results)} deduped results")
         metrics.retrieval_latency.observe(retrieval_time / 1000)
-        metrics.retrieval_results.set(len(filtered_results))
+        metrics.retrieval_results.set(len(deduped_results))
         retrieval_stage.finish(
-            results_count=len(filtered_results),
+            results_count=len(deduped_results),
             raw_results_count=len(retrieval_results),
+            filtered_results_count=len(filtered_results),
             queries=rewritten_queries[:5],
             access_context=access_context.to_dict() if access_context else {},
+            retrieval_top_k=retrieval_top_k,
+            generation_top_k=generation_top_k,
         )
 
-        final_results = filtered_results
+        final_results = deduped_results
         rerank_stage = StageTrace(stage="rerank", started_at_ms=time.time() * 1000)
         execution_trace.add_stage(rerank_stage)
-        if effective_rerank and len(filtered_results) > 0:
+        if effective_rerank and len(deduped_results) > 0:
             rerank_start = time.time()
             final_results = await self.reranker.rerank(
                 query=query,
-                candidates=filtered_results,
-                top_k=effective_top_k
+                candidates=deduped_results,
+                top_k=retrieval_top_k,
+                apply_generation_optimization=False,
             )
-            final_results = self._normalize_results(final_results)
+            final_results = self._deduplicate_results(self._normalize_results(final_results))
             rerank_time = (time.time() - rerank_start) * 1000
             logger.info(f"Reranking completed in {rerank_time:.2f}ms")
             metrics.rerank_latency.observe(rerank_time / 1000)
-            rerank_stage.finish(enabled=True, before=len(filtered_results), after=len(final_results))
+            rerank_stage.finish(enabled=True, before=len(deduped_results), after=len(final_results))
         else:
-            rerank_stage.finish(enabled=False, before=len(filtered_results), after=len(final_results))
+            rerank_stage.finish(enabled=False, before=len(deduped_results), after=len(final_results))
 
         if len(final_results) == 0:
             metrics.record_fallback("no_retrieval_results")
@@ -168,28 +194,29 @@ class RAGEngine:
                 },
             }
 
+        generation_inputs = final_results[:generation_top_k]
         generation_stage = StageTrace(stage="generate", started_at_ms=time.time() * 1000)
         execution_trace.add_stage(generation_stage)
         generate_start = time.time()
         answer = await self.generator.generate(
             query=query,
-            contexts=final_results,
+            contexts=generation_inputs,
             conversation_id=conversation_id
         )
         generate_time = (time.time() - generate_start) * 1000
         logger.info(f"Generation completed in {generate_time:.2f}ms")
         metrics.generation_latency.observe(generate_time / 1000)
-        generation_stage.finish(context_count=len(final_results))
+        generation_stage.finish(context_count=len(generation_inputs))
 
         total_time = (time.time() - start_time) * 1000
         logger.info(f"Total query processing time: {total_time:.2f}ms")
 
-        support_confidence = round(min(1.0, 0.35 + 0.1 * min(len(final_results), 5)), 2)
+        support_confidence = round(min(1.0, 0.35 + 0.1 * min(len(generation_inputs), 5)), 2)
         support = {
-            "has_support": len(final_results) > 0,
+            "has_support": len(generation_inputs) > 0,
             "confidence": support_confidence,
             "reason": "retrieval_backed_generation",
-            "citations_count": len(final_results),
+            "citations_count": len(generation_inputs),
         }
         metrics.record_support_confidence(support_confidence)
 
@@ -216,7 +243,7 @@ class RAGEngine:
         metrics.record_route(route_decision.task_type, route_decision.route)
         effective_rewrite = rewrite and route_decision.rewrite_enabled
         effective_rerank = rerank and route_decision.rerank_enabled
-        effective_top_k = min(max(top_k, 1), route_decision.recommended_top_k)
+        effective_top_k = max(top_k, route_decision.recommended_top_k)
 
         if effective_rewrite:
             rewritten_queries = await self.rewriter.rewrite(query)
@@ -229,9 +256,15 @@ class RAGEngine:
             results.extend(self._normalize_results(per_query_results))
 
         results = self.filter_engine.filter_results(results, access_context)
+        results = self._deduplicate_results(results)
 
         if effective_rerank and len(results) > 0:
-            results = await self.reranker.rerank(query, results, effective_top_k)
-            results = self._normalize_results(results)
+            results = await self.reranker.rerank(
+                query,
+                results,
+                effective_top_k,
+                apply_generation_optimization=False,
+            )
+            results = self._deduplicate_results(self._normalize_results(results))
 
-        return results
+        return results[:effective_top_k]

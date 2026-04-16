@@ -85,6 +85,45 @@
 
 ---
 
+### OPT-005 检索深度放开 + doc_id 去重 + evaluator 去重修复
+
+- **问题**：上一轮把检索 `top_k` 与生成 `top_k` 拆开时，引入了两个问题：
+  1. reranker 仍按 stage 固定 `top_k=10` 截断，导致评测看不到更深候选；
+  2. multi-query / multi-source 结果没有按 `doc_id` 去重，`sources` 被重复文档污染，甚至出现 `map > 1` 的无效评测。
+- **改动文件**：
+  - `src/core/rag_engine.py`
+  - `src/rerank/three_stage.py`
+  - `src/evaluation/metrics.py`
+- **commit**：待本轮提交
+- **方法**：
+  - 在 `RAGEngine` 中把检索候选集与生成上下文集分离；
+  - 在 retrieval / rerank 前后统一按 `doc_id` 去重；
+  - 让 `ThreeStageReranker` 的 stage1 / stage2 支持按传入 `top_k` 放宽，而不是硬截断到固定 30/10；
+  - 在 evaluator 侧再次对 `retrieved_ids` 去重，防止重复结果把 `MAP` / `NDCG` 算坏。
+- **before（稳定基线）**：
+  - `recall@20 = 0.7222`
+  - `precision@3 = 0.6667`
+  - `mrr = 1.0`
+  - `map = 0.7222`
+  - `badcases = 0`
+- **after（当前固定脚本 + 10 runs）**：
+  - `recall@20 = 1.0`
+  - `precision@3 = 0.8889`
+  - `mrr = 1.0`
+  - `map = 1.0`
+  - `badcases = 0`
+  - artifact：`artifacts/eval/optimization_runs/repo_grounded_eval_20260417_003654.json`
+- **delta**：
+  - `recall@20: +0.2778`
+  - `precision@3: +0.2222`
+  - `map: +0.2778`
+- **风险**：
+  - 当前数据集只有 3 条 query，属于 repo-grounded lightweight eval，不能直接对外当最终泛化指标；
+  - 本轮涨分包含“评测正确性修复”带来的收益，不能全部解读为语义检索能力本身暴涨。
+- **结论**：保留。该轮属于“评测正确性修复 + 检索候选深度修复”，在固定协议下形成了真实、可复现的指标提升。
+
+---
+
 ## Next Engineering Steps
 
 1. **强制 doc injection**

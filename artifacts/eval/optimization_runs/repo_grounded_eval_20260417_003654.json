@@ -1,0 +1,121 @@
+{
+  "meta": {
+    "validation_level": "lightweight",
+    "dataset_size": 3,
+    "warnings": [
+      "当前为轻量级验证数据集，结果仅用于方向性判断，不应用作最终对外指标。"
+    ],
+    "note": "repo-grounded-engineering-eval",
+    "git_commit": "51a5851",
+    "protocol": {
+      "script": "scripts/run_repo_grounded_eval.py",
+      "runs": 10,
+      "dataset_name": "repo_grounded_eval_v1_inline"
+    },
+    "dataset": [
+      {
+        "query": "系统支持哪些检索优化能力？",
+        "relevant_docs": [
+          "README.md",
+          "ARCHITECTURE.md"
+        ]
+      },
+      {
+        "query": "当检索证据不足时，系统会怎么处理？",
+        "relevant_docs": [
+          "README.md",
+          "ARCHITECTURE.md",
+          "docs/AGENT_HARNESS_GAP_ANALYSIS.md",
+          "docs/ROADMAP.md"
+        ]
+      },
+      {
+        "query": "为什么要输出 structured execution trace？",
+        "relevant_docs": [
+          "README.md",
+          "ARCHITECTURE.md",
+          "docs/AGENT_HARNESS_GAP_ANALYSIS.md"
+        ]
+      }
+    ],
+    "stability_summary": {
+      "runs": 10,
+      "min_recall@20": 1.0,
+      "max_recall@20": 1.0,
+      "avg_recall@20": 1.0,
+      "min_precision@3": 0.8888888888888888,
+      "max_precision@3": 0.8888888888888888,
+      "avg_precision@3": 0.888888888888889,
+      "min_mrr": 1.0,
+      "max_mrr": 1.0,
+      "avg_mrr": 1.0,
+      "min_map": 1.0,
+      "max_map": 1.0,
+      "avg_map": 1.0,
+      "min_faithfulness": 1.0,
+      "max_faithfulness": 1.0,
+      "avg_faithfulness": 1.0,
+      "min_relevance": 0.08333333333333333,
+      "max_relevance": 0.08333333333333333,
+      "avg_relevance": 0.08333333333333333,
+      "min_hallucination": 0.0,
+      "max_hallucination": 0.0,
+      "avg_hallucination": 0.0,
+      "avg_latency_ms": 329.80456352233887,
+      "avg_support_confidence": 0.85,
+      "max_badcases": 0
+    }
+  },
+  "retrieval": {
+    "recall@20": 1.0,
+    "precision@3": 0.8888888888888888,
+    "ndcg@10": 1.0,
+    "mrr": 1.0,
+    "map": 1.0
+  },
+  "generation": {
+    "avg_faithfulness": 1.0,
+    "avg_relevance": 0.08333333333333333,
+    "avg_hallucination": 0.0
+  },
+  "performance": {
+    "avg_latency_ms": 329.7582467397054,
+    "p99_latency_ms": 354.9476146697998,
+    "p95_latency_ms": 353.6555767059326,
+    "avg_support_confidence": 0.85,
+    "fallback_rate": 0.0
+  },
+  "details": {
+    "num_queries": 3,
+    "generation_metrics_per_query": [
+      {
+        "query": "系统支持哪些检索优化能力？",
+        "faithfulness": 1.0,
+        "relevance": 0.0,
+        "hallucination": 0.0,
+        "support_confidence": 0.85,
+        "has_support": true,
+        "sources_count": 7
+      },
+      {
+        "query": "当检索证据不足时，系统会怎么处理？",
+        "faithfulness": 1.0,
+        "relevance": 0.0,
+        "hallucination": 0.0,
+        "support_confidence": 0.85,
+        "has_support": true,
+        "sources_count": 7
+      },
+      {
+        "query": "为什么要输出 structured execution trace？",
+        "faithfulness": 1.0,
+        "relevance": 0.25,
+        "hallucination": 0.0,
+        "support_confidence": 0.85,
+        "has_support": true,
+        "sources_count": 7
+      }
+    ],
+    "badcases": []
+  }
+}

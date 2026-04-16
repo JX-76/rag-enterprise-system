@@ -61,18 +61,25 @@ class RetrievalEvaluator:
 
         for _query, results, relevant in zip(queries, retrieved_results, ground_truth):
             retrieved_ids = [r["id"] for r in results]
+            deduped_retrieved_ids = []
+            seen_ids = set()
+            for doc_id in retrieved_ids:
+                if doc_id in seen_ids:
+                    continue
+                seen_ids.add(doc_id)
+                deduped_retrieved_ids.append(doc_id)
 
             for k in self.k_values:
-                top_k = set(retrieved_ids[:k])
+                top_k = set(deduped_retrieved_ids[:k])
                 recall = len(top_k & relevant) / len(relevant) if relevant else 0.0
                 recall_at_k[k].append(recall)
                 precision = len(top_k & relevant) / k if k > 0 else 0.0
                 precision_at_k[k].append(precision)
-                ndcg = self._compute_ndcg(retrieved_ids[:k], relevant)
+                ndcg = self._compute_ndcg(deduped_retrieved_ids[:k], relevant)
                 ndcg_at_k[k].append(ndcg)
 
-            reciprocal_ranks.append(self._compute_mrr(retrieved_ids, relevant))
-            average_precisions.append(self._compute_ap(retrieved_ids, relevant))
+            reciprocal_ranks.append(self._compute_mrr(deduped_retrieved_ids, relevant))
+            average_precisions.append(self._compute_ap(deduped_retrieved_ids, relevant))
 
         def safe_mean(values):
             if not values:

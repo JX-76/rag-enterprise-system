@@ -25,20 +25,20 @@ class StageOneReranker:
     async def rerank(
         self,
         query: str,
-        candidates: List[Dict[str, Any]]
+        candidates: List[Dict[str, Any]],
+        top_k: int | None = None,
     ) -> List[Dict[str, Any]]:
         """预排序"""
         logger.debug(f"Stage 1: Reranking {len(candidates)} candidates")
 
-        # 简化实现：按原有分数排序
-        # 实际应使用Cross-Encoder计算分数
+        limit = max(self.top_k, top_k or 0)
         sorted_candidates = sorted(
             candidates,
             key=lambda x: x.get("score", 0),
             reverse=True
         )
 
-        return sorted_candidates[:self.top_k]
+        return sorted_candidates[:limit]
 
 
 class StageTwoReranker:
@@ -54,13 +54,13 @@ class StageTwoReranker:
     async def rerank(
         self,
         query: str,
-        candidates: List[Dict[str, Any]]
+        candidates: List[Dict[str, Any]],
+        top_k: int | None = None,
     ) -> List[Dict[str, Any]]:
         """核心精排"""
         logger.debug(f"Stage 2: Reranking {len(candidates)} candidates")
 
-        # 这里保持确定性排序，避免评测结果随随机扰动波动。
-        # 实际生产里应替换为真正的 cross-encoder / reranker 分数。
+        limit = max(self.top_k, top_k or 0)
         reranked = sorted(
             candidates,
             key=lambda x: (
@@ -71,7 +71,7 @@ class StageTwoReranker:
             reverse=True,
         )
 
-        return reranked[:self.top_k]
+        return reranked[:limit]
 
 
 class StageThreeOptimizer:
@@ -97,14 +97,10 @@ class StageThreeOptimizer:
 
         results = candidates
 
-        # 去重
         if self.deduplicate:
             results = self._deduplicate(results)
 
-        # 位置优化：高相关性文档放第1和第3位（LLM注意力模式）
         results = self._optimize_position(results)
-
-        # 长度控制
         results = self._truncate_by_length(results, self.max_length)
 
         return results[:top_k]
@@ -118,7 +114,6 @@ class StageThreeOptimizer:
         unique = []
 
         for c in candidates:
-            # 简化：基于前100字符哈希去重
             content_hash = hash(c.get("content", "")[:100])
             if content_hash not in seen:
                 seen.add(content_hash)
@@ -137,11 +132,7 @@ class StageThreeOptimizer:
         if len(candidates) < 3:
             return candidates
 
-        # 把最高相关性的放在第1位
-        # 第二高的放在第3位（如果有）
         optimized = candidates.copy()
-
-        # 假设已按相关性排序
         return optimized
 
     def _truncate_by_length(
@@ -156,9 +147,8 @@ class StageThreeOptimizer:
         for c in candidates:
             content_length = len(c.get("content", ""))
             if total_length + content_length > max_length:
-                # 截断当前文档
                 remaining = max_length - total_length
-                if remaining > 100:  # 至少保留100字符
+                if remaining > 100:
                     c["content"] = c["content"][:remaining]
                     truncated.append(c)
                 break
@@ -184,7 +174,8 @@ class ThreeStageReranker:
         self,
         query: str,
         candidates: List[Dict[str, Any]],
-        top_k: int = 5
+        top_k: int = 5,
+        apply_generation_optimization: bool = True,
     ) -> List[Dict[str, Any]]:
         """
         执行三阶重排序
@@ -199,15 +190,15 @@ class ThreeStageReranker:
 
         logger.info(f"Starting three-stage reranking for {len(candidates)} candidates")
 
-        # Stage 1
         stage1_results = await self.stage1.rerank(query, candidates)
         logger.debug(f"Stage 1: {len(candidates)} -> {len(stage1_results)}")
 
-        # Stage 2
         stage2_results = await self.stage2.rerank(query, stage1_results)
         logger.debug(f"Stage 2: {len(stage1_results)} -> {len(stage2_results)}")
 
-        # Stage 3
+        if not apply_generation_optimization:
+            return stage2_results[:top_k]
+
         final_results = await self.stage3.optimize(query, stage2_results, top_k)
         logger.debug(f"Stage 3: {len(stage2_results)} -> {len(final_results)}")
 
