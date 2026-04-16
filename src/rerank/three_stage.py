@@ -5,7 +5,6 @@ Stage 2: 核心精排 (BGE-Reranker) - Top30 → Top10
 Stage 3: 生成适配优化 (Position/Length) - Top10 → Top5
 """
 from typing import List, Dict, Any
-import numpy as np
 
 from src.core.config import RERANK_CONFIG
 from src.core.logging import get_logger
@@ -18,11 +17,11 @@ class StageOneReranker:
     一阶：轻量级预排序
     使用轻量级模型快速筛选
     """
-    
+
     def __init__(self):
         self.model = None  # BGE-small
         self.top_k = RERANK_CONFIG["stage1"]["top_k"]
-    
+
     async def rerank(
         self,
         query: str,
@@ -30,7 +29,7 @@ class StageOneReranker:
     ) -> List[Dict[str, Any]]:
         """预排序"""
         logger.debug(f"Stage 1: Reranking {len(candidates)} candidates")
-        
+
         # 简化实现：按原有分数排序
         # 实际应使用Cross-Encoder计算分数
         sorted_candidates = sorted(
@@ -38,7 +37,7 @@ class StageOneReranker:
             key=lambda x: x.get("score", 0),
             reverse=True
         )
-        
+
         return sorted_candidates[:self.top_k]
 
 
@@ -47,11 +46,11 @@ class StageTwoReranker:
     二阶：核心精排
     使用更强的重排序模型
     """
-    
+
     def __init__(self):
         self.model = None  # BGE-Reranker-large
         self.top_k = RERANK_CONFIG["stage2"]["top_k"]
-    
+
     async def rerank(
         self,
         query: str,
@@ -59,15 +58,19 @@ class StageTwoReranker:
     ) -> List[Dict[str, Any]]:
         """核心精排"""
         logger.debug(f"Stage 2: Reranking {len(candidates)} candidates")
-        
-        # 简化实现
-        # 实际应使用Query-Document Pair计算相关性分数
+
+        # 这里保持确定性排序，避免评测结果随随机扰动波动。
+        # 实际生产里应替换为真正的 cross-encoder / reranker 分数。
         reranked = sorted(
             candidates,
-            key=lambda x: x.get("score", 0) * np.random.uniform(0.9, 1.1),
-            reverse=True
+            key=lambda x: (
+                x.get("score", 0),
+                x.get("metadata", {}).get("path", ""),
+                x.get("id", ""),
+            ),
+            reverse=True,
         )
-        
+
         return reranked[:self.top_k]
 
 
@@ -78,11 +81,11 @@ class StageThreeOptimizer:
     - 去重：相似文档合并
     - 长度截断：控制总长度
     """
-    
+
     def __init__(self):
         self.max_length = RERANK_CONFIG["stage3"]["max_context_length"]
         self.deduplicate = RERANK_CONFIG["stage3"]["deduplication"]
-    
+
     async def optimize(
         self,
         query: str,
@@ -91,21 +94,21 @@ class StageThreeOptimizer:
     ) -> List[Dict[str, Any]]:
         """生成适配优化"""
         logger.debug(f"Stage 3: Optimizing {len(candidates)} candidates")
-        
+
         results = candidates
-        
+
         # 去重
         if self.deduplicate:
             results = self._deduplicate(results)
-        
+
         # 位置优化：高相关性文档放第1和第3位（LLM注意力模式）
         results = self._optimize_position(results)
-        
+
         # 长度控制
         results = self._truncate_by_length(results, self.max_length)
-        
+
         return results[:top_k]
-    
+
     def _deduplicate(
         self,
         candidates: List[Dict[str, Any]]
@@ -113,16 +116,16 @@ class StageThreeOptimizer:
         """去重：基于内容相似度"""
         seen = set()
         unique = []
-        
+
         for c in candidates:
             # 简化：基于前100字符哈希去重
             content_hash = hash(c.get("content", "")[:100])
             if content_hash not in seen:
                 seen.add(content_hash)
                 unique.append(c)
-        
+
         return unique
-    
+
     def _optimize_position(
         self,
         candidates: List[Dict[str, Any]]
@@ -133,14 +136,14 @@ class StageThreeOptimizer:
         """
         if len(candidates) < 3:
             return candidates
-        
+
         # 把最高相关性的放在第1位
         # 第二高的放在第3位（如果有）
         optimized = candidates.copy()
-        
+
         # 假设已按相关性排序
         return optimized
-    
+
     def _truncate_by_length(
         self,
         candidates: List[Dict[str, Any]],
@@ -149,7 +152,7 @@ class StageThreeOptimizer:
         """按长度截断"""
         total_length = 0
         truncated = []
-        
+
         for c in candidates:
             content_length = len(c.get("content", ""))
             if total_length + content_length > max_length:
@@ -159,10 +162,10 @@ class StageThreeOptimizer:
                     c["content"] = c["content"][:remaining]
                     truncated.append(c)
                 break
-            
+
             total_length += content_length
             truncated.append(c)
-        
+
         return truncated
 
 
@@ -171,12 +174,12 @@ class ThreeStageReranker:
     三阶重排序器
     组合三个阶段的排序
     """
-    
+
     def __init__(self):
         self.stage1 = StageOneReranker()
         self.stage2 = StageTwoReranker()
         self.stage3 = StageThreeOptimizer()
-    
+
     async def rerank(
         self,
         query: str,
@@ -185,7 +188,7 @@ class ThreeStageReranker:
     ) -> List[Dict[str, Any]]:
         """
         执行三阶重排序
-        
+
         流程：
         1. Stage 1: 快速筛选 Top100 -> Top30
         2. Stage 2: 精排 Top30 -> Top10
@@ -193,19 +196,20 @@ class ThreeStageReranker:
         """
         if not candidates:
             return []
-        
+
         logger.info(f"Starting three-stage reranking for {len(candidates)} candidates")
-        
+
         # Stage 1
         stage1_results = await self.stage1.rerank(query, candidates)
         logger.debug(f"Stage 1: {len(candidates)} -> {len(stage1_results)}")
-        
+
         # Stage 2
         stage2_results = await self.stage2.rerank(query, stage1_results)
         logger.debug(f"Stage 2: {len(stage1_results)} -> {len(stage2_results)}")
-        
+
         # Stage 3
         final_results = await self.stage3.optimize(query, stage2_results, top_k)
         logger.debug(f"Stage 3: {len(stage2_results)} -> {len(final_results)}")
-        
+
         return final_results
+
