@@ -1,0 +1,62 @@
+{
+  "meta": {
+    "validation_level": "lightweight",
+    "dataset_size": 3,
+    "warnings": [
+      "当前为轻量级验证数据集，结果仅用于方向性判断，不应用作最终对外指标。"
+    ],
+    "note": "stable-aggregated-run"
+  },
+  "retrieval": {
+    "recall@20": 0.8333333333333334,
+    "precision@3": 0.6666666666666666,
+    "ndcg@10": 0.903689746839746,
+    "mrr": 1.0,
+    "map": 0.8722222222222222
+  },
+  "generation": {
+    "avg_faithfulness": 1.0,
+    "avg_relevance": 0.08333333333333333,
+    "avg_hallucination": 0.0
+  },
+  "performance": {
+    "avg_latency_ms": 327.59348551432294,
+    "p99_latency_ms": 358.0533838272095,
+    "p95_latency_ms": 356.30791187286377,
+    "avg_support_confidence": 0.8166666666666668,
+    "fallback_rate": 0.0
+  },
+  "details": {
+    "num_queries": 3,
+    "generation_metrics_per_query": [
+      {
+        "query": "系统支持哪些检索优化能力？",
+        "faithfulness": 1.0,
+        "relevance": 0.0,
+        "hallucination": 0.0,
+        "support_confidence": 0.75,
+        "has_support": true,
+        "sources_count": 4
+      },
+      {
+        "query": "当检索证据不足时，系统会怎么处理？",
+        "faithfulness": 1.0,
+        "relevance": 0.0,
+        "hallucination": 0.0,
+        "support_confidence": 0.85,
+        "has_support": true,
+        "sources_count": 5
+      },
+      {
+        "query": "为什么要输出 structured execution trace？",
+        "faithfulness": 1.0,
+        "relevance": 0.25,
+        "hallucination": 0.0,
+        "support_confidence": 0.85,
+        "has_support": true,
+        "sources_count": 5
+      }
+    ],
+    "badcases": []
+  }
+}
