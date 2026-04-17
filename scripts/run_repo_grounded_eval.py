@@ -56,13 +56,23 @@ def _mean(values: List[float]) -> float:
     return sum(values) / len(values) if values else 0.0
 
 
+def _load_jsonl_dataset(path: Path) -> List[Dict[str, Any]]:
+    dataset: List[Dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        dataset.append(json.loads(line))
+    return dataset
+
+
 async def _run_once(dataset: List[Dict[str, Any]]) -> Dict[str, Any]:
     engine = RAGEngine()
     runner = BenchmarkRunner(engine)
     return await runner.run_benchmark(dataset)
 
 
-async def _run_many(dataset: List[Dict[str, Any]], runs: int) -> Dict[str, Any]:
+async def _run_many(dataset: List[Dict[str, Any]], runs: int, dataset_name: str) -> Dict[str, Any]:
     reports: List[Dict[str, Any]] = []
     for _ in range(runs):
         reports.append(await _run_once(dataset))
@@ -85,7 +95,7 @@ async def _run_many(dataset: List[Dict[str, Any]], runs: int) -> Dict[str, Any]:
     latest["meta"]["protocol"] = {
         "script": "scripts/run_repo_grounded_eval.py",
         "runs": runs,
-        "dataset_name": "repo_grounded_eval_v1_inline",
+        "dataset_name": dataset_name,
     }
     latest["meta"]["dataset"] = dataset
     latest["meta"]["stability_summary"] = {
@@ -122,13 +132,26 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--runs", type=int, default=10, help="number of repeated runs")
     parser.add_argument(
+        "--dataset-file",
+        default="",
+        help="optional JSONL dataset path relative to repo root",
+    )
+    parser.add_argument(
         "--output-dir",
         default="artifacts/eval/optimization_runs",
         help="artifact output directory",
     )
     args = parser.parse_args()
 
-    report = asyncio.run(_run_many(DEFAULT_DATASET, args.runs))
+    if args.dataset_file:
+        dataset_path = (ROOT / args.dataset_file).resolve()
+        dataset = _load_jsonl_dataset(dataset_path)
+        dataset_name = str(dataset_path.relative_to(ROOT))
+    else:
+        dataset = DEFAULT_DATASET
+        dataset_name = "repo_grounded_eval_v1_inline"
+
+    report = asyncio.run(_run_many(dataset, args.runs, dataset_name))
 
     out_dir = ROOT / args.output_dir
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -137,7 +160,11 @@ def main() -> None:
     out_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 
     print(out_path.relative_to(ROOT))
-    print(json.dumps(report["meta"]["stability_summary"], ensure_ascii=False, indent=2))
+    print(json.dumps({
+        "dataset_name": dataset_name,
+        "dataset_size": len(dataset),
+        **report["meta"]["stability_summary"],
+    }, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

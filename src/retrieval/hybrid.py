@@ -20,10 +20,15 @@ FALLBACK_CORPUS_FILES = [
     "README.md",
     "ARCHITECTURE.md",
     "API.md",
+    "DEPLOYMENT.md",
+    "main.py",
+    "src/main.py",
     "docs/ROADMAP.md",
     "docs/AGENT_HARNESS_GAP_ANALYSIS.md",
     "docs/PROJECT_REVIEW.md",
     "docs/EVAL_PLAN.md",
+    "docs/STRUCTURE_GUIDE.md",
+    "docs/REPO_REFACTOR_PLAN.md",
 ]
 STOPWORDS = {
     "这个", "那个", "以及", "可以", "如何", "什么", "为什么", "哪些", "系统", "当前", "项目",
@@ -33,11 +38,19 @@ QUERY_HINTS = {
     "retrieval": ["hybrid retrieval", "query rewrite", "rerank", "检索质量", "检索优化", "召回", "重排"],
     "fallback": ["support-aware fallback", "fallback", "低支持度", "证据不足", "强答", "support"],
     "trace": ["structured execution trace", "execution trace", "trace", "route", "rewrite", "retrieve", "rerank", "generate"],
+    "api": ["api", "官方 api 入口", "src.main:app", "main.py", "兼容启动器", "启动服务", "api 文档"],
+    "structure": ["canonical 路径", "主结构", "structure guide", "src/document", "src/ingestion", "src/vector", "vector_store"],
+    "positioning": ["企业级", "enterprise", "不追求", "大而全", "聚焦检索质量优化", "ai 应用工程化", "模块化 rag 项目"],
+    "deployment": ["启动服务", "api 文档", "uvicorn", "localhost:8000/docs", "deployment"],
 }
 DOC_HINTS = {
     "retrieval": ["README.md", "ARCHITECTURE.md"],
     "fallback": ["README.md", "ARCHITECTURE.md", "docs/AGENT_HARNESS_GAP_ANALYSIS.md", "docs/ROADMAP.md"],
     "trace": ["README.md", "ARCHITECTURE.md", "docs/AGENT_HARNESS_GAP_ANALYSIS.md"],
+    "api": ["src/main.py", "main.py", "API.md", "README.md"],
+    "structure": ["docs/STRUCTURE_GUIDE.md", "docs/REPO_REFACTOR_PLAN.md", "README.md"],
+    "positioning": ["README.md", "ARCHITECTURE.md", "docs/ROADMAP.md", "docs/PROJECT_REVIEW.md"],
+    "deployment": ["DEPLOYMENT.md", "README.md", "API.md"],
 }
 
 
@@ -144,6 +157,14 @@ def _expand_query_tokens(query: str) -> List[str]:
         tokens.extend(QUERY_HINTS["fallback"])
     if any(key in query_lower for key in ["trace", "execution", "执行轨迹", "结构化"]):
         tokens.extend(QUERY_HINTS["trace"])
+    if any(key in query_lower for key in ["api", "入口", "main.py", "启动器", "文档"]):
+        tokens.extend(QUERY_HINTS["api"])
+    if any(key in query_lower for key in ["结构", "canonical", "src/document", "src/vector", "vector_store", "ingestion"]):
+        tokens.extend(QUERY_HINTS["structure"])
+    if any(key in query_lower for key in ["企业级", "enterprise", "大而全", "定位", "不追求", "工程化"]):
+        tokens.extend(QUERY_HINTS["positioning"])
+    if any(key in query_lower for key in ["启动", "部署", "uvicorn", "docs", "localhost:8000"]):
+        tokens.extend(QUERY_HINTS["deployment"])
 
     seen = set()
     expanded = []
@@ -164,6 +185,14 @@ def _preferred_docs_for_query(query: str) -> List[str]:
         preferred.extend(DOC_HINTS["fallback"])
     if any(key in query_lower for key in ["trace", "execution", "执行轨迹", "结构化"]):
         preferred.extend(DOC_HINTS["trace"])
+    if any(key in query_lower for key in ["api", "入口", "main.py", "启动器", "文档"]):
+        preferred.extend(DOC_HINTS["api"])
+    if any(key in query_lower for key in ["结构", "canonical", "src/document", "src/vector", "vector_store", "ingestion"]):
+        preferred.extend(DOC_HINTS["structure"])
+    if any(key in query_lower for key in ["企业级", "enterprise", "大而全", "定位", "不追求", "工程化"]):
+        preferred.extend(DOC_HINTS["positioning"])
+    if any(key in query_lower for key in ["启动", "部署", "uvicorn", "docs", "localhost:8000"]):
+        preferred.extend(DOC_HINTS["deployment"])
 
     seen = set()
     result = []

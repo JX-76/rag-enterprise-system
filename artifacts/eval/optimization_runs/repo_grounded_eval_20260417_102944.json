@@ -1,0 +1,800 @@
+{
+  "meta": {
+    "validation_level": "lightweight",
+    "dataset_size": 30,
+    "warnings": [],
+    "note": "repo-grounded-engineering-eval",
+    "git_commit": "658c75e",
+    "protocol": {
+      "script": "scripts/run_repo_grounded_eval.py",
+      "runs": 3,
+      "dataset_name": "data/eval/repo_grounded_eval_v1.jsonl"
+    },
+    "dataset": [
+      {
+        "id": "q001",
+        "query": "这个项目的官方 API 入口是什么？",
+        "relevant_docs": [
+          "src/main.py",
+          "README.md",
+          "API.md"
+        ],
+        "answer_points": [
+          "src.main:app"
+        ],
+        "category": "api",
+        "difficulty": "easy"
+      },
+      {
+        "id": "q002",
+        "query": "根目录 main.py 在当前仓库里扮演什么角色？",
+        "relevant_docs": [
+          "main.py",
+          "README.md",
+          "API.md"
+        ],
+        "answer_points": [
+          "compatibility launcher",
+          "兼容启动器"
+        ],
+        "category": "api",
+        "difficulty": "easy"
+      },
+      {
+        "id": "q003",
+        "query": "这个项目当前主打的 RAG 主链路包含哪些阶段？",
+        "relevant_docs": [
+          "README.md",
+          "ARCHITECTURE.md"
+        ],
+        "answer_points": [
+          "ingestion",
+          "query rewrite",
+          "hybrid retrieval",
+          "reranking",
+          "generation"
+        ],
+        "category": "architecture",
+        "difficulty": "easy"
+      },
+      {
+        "id": "q004",
+        "query": "为什么这个项目不把自己定义成泛企业级平台？",
+        "relevant_docs": [
+          "README.md",
+          "ARCHITECTURE.md",
+          "docs/ROADMAP.md"
+        ],
+        "answer_points": [
+          "聚焦检索质量优化",
+          "AI 应用工程化",
+          "避免假大空 enterprise 叙事"
+        ],
+        "category": "positioning",
+        "difficulty": "medium"
+      },
+      {
+        "id": "q005",
+        "query": "Parent-Child Chunking 在这个项目里要解决什么问题？",
+        "relevant_docs": [
+          "README.md",
+          "ARCHITECTURE.md"
+        ],
+        "answer_points": [
+          "固定窗口切块导致上下文割裂",
+          "小块检索+大块生成"
+        ],
+        "category": "chunking",
+        "difficulty": "easy"
+      },
+      {
+        "id": "q006",
+        "query": "Hybrid Retrieval 在这个项目里的作用是什么？",
+        "relevant_docs": [
+          "README.md",
+          "ARCHITECTURE.md"
+        ],
+        "answer_points": [
+          "Dense / Sparse / BM25",
+          "提高召回多样性和命中概率"
+        ],
+        "category": "retrieval",
+        "difficulty": "easy"
+      },
+      {
+        "id": "q007",
+        "query": "Query Rewrite 的设计动机是什么？",
+        "relevant_docs": [
+          "README.md",
+          "ARCHITECTURE.md"
+        ],
+        "answer_points": [
+          "原始 query 可能过短或模糊",
+          "提升召回鲁棒性"
+        ],
+        "category": "rewrite",
+        "difficulty": "easy"
+      },
+      {
+        "id": "q008",
+        "query": "Reranking 在当前主链路中的职责是什么？",
+        "relevant_docs": [
+          "README.md",
+          "ARCHITECTURE.md"
+        ],
+        "answer_points": [
+          "候选文档精排",
+          "控制最终上下文质量和数量"
+        ],
+        "category": "rerank",
+        "difficulty": "easy"
+      },
+      {
+        "id": "q009",
+        "query": "项目中哪些模块被定义为实验性（Experimental）或可选（Optional）？",
+        "relevant_docs": [
+          "README.md",
+          "ARCHITECTURE.md",
+          "docs/ROADMAP.md"
+        ],
+        "answer_points": [
+          "tenancy",
+          "ab_testing",
+          "hot_reload",
+          "agent",
+          "memory",
+          "workflow"
+        ],
+        "category": "scope",
+        "difficulty": "medium"
+      },
+      {
+        "id": "q010",
+        "query": "为什么建议将实验性模块与核心实现路径分开说明？",
+        "relevant_docs": [
+          "README.md",
+          "ARCHITECTURE.md",
+          "docs/ROADMAP.md"
+        ],
+        "answer_points": [
+          "抬高技术展示官预期",
+          "不属于默认主调用路径",
+          "降低 defend 风险"
+        ],
+        "category": "scope",
+        "difficulty": "medium"
+      },
+      {
+        "id": "q011",
+        "query": "当前仓库建议按哪些 canonical 路径来理解主结构？",
+        "relevant_docs": [
+          "README.md",
+          "docs/STRUCTURE_GUIDE.md"
+        ],
+        "answer_points": [
+          "api",
+          "core",
+          "ingestion",
+          "retrieval",
+          "rerank",
+          "generation",
+          "evaluation"
+        ],
+        "category": "structure",
+        "difficulty": "medium"
+      },
+      {
+        "id": "q012",
+        "query": "为什么 src/document/ 不建议继续作为主线理解？",
+        "relevant_docs": [
+          "README.md",
+          "docs/STRUCTURE_GUIDE.md",
+          "docs/REPO_REFACTOR_PLAN.md"
+        ],
+        "answer_points": [
+          "与 src/ingestion 职责重叠",
+          "建议统一按 ingestion 理解"
+        ],
+        "category": "structure",
+        "difficulty": "medium"
+      },
+      {
+        "id": "q013",
+        "query": "为什么 src/vector/ 和 src/vector_store/ 需要进一步收束？",
+        "relevant_docs": [
+          "docs/STRUCTURE_GUIDE.md",
+          "docs/REPO_REFACTOR_PLAN.md"
+        ],
+        "answer_points": [
+          "职责重叠",
+          "需要统一为单一存储层"
+        ],
+        "category": "structure",
+        "difficulty": "medium"
+      },
+      {
+        "id": "q014",
+        "query": "如何准确概括该项目的核心技术路线与模块化设计？",
+        "relevant_docs": [
+          "docs/ROADMAP.md",
+          "README.md"
+        ],
+        "answer_points": [
+          "模块化 RAG 项目",
+          "chunking / rewrite / hybrid retrieval / rerank",
+          "FastAPI / 中间件 / 日志 / 监控"
+        ],
+        "category": "positioning",
+        "difficulty": "medium"
+      },
+      {
+        "id": "q015",
+        "query": "当前版本明确不追求什么？",
+        "relevant_docs": [
+          "docs/ROADMAP.md"
+        ],
+        "answer_points": [
+          "泛企业级大而全叙事",
+          "夸大的多租户/权限/生产级高可用承诺",
+          "无法 defend 的性能或线上能力表述"
+        ],
+        "category": "positioning",
+        "difficulty": "medium"
+      },
+      {
+        "id": "q016",
+        "query": "该项目如何体现 AI 应用工程化与检索质量优化的结合？",
+        "relevant_docs": [
+          "README.md",
+          "ARCHITECTURE.md"
+        ],
+        "answer_points": [
+          "API 服务化",
+          "模块化工程结构",
+          "配置和中间件设计",
+          "日志监控评估"
+        ],
+        "category": "positioning",
+        "difficulty": "medium"
+      },
+      {
+        "id": "q017",
+        "query": "在该项目中，推荐的端到端检索增强生成演示路径包含哪些环节？",
+        "relevant_docs": [
+          "README.md",
+          "ARCHITECTURE.md"
+        ],
+        "answer_points": [
+          "文档解析和切块",
+          "查询改写",
+          "hybrid retrieval",
+          "rerank 前后变化",
+          "回答和引用来源"
+        ],
+        "category": "demo",
+        "difficulty": "easy"
+      },
+      {
+        "id": "q018",
+        "query": "README 中推荐如何启动服务和查看 API 文档？",
+        "relevant_docs": [
+          "README.md",
+          "DEPLOYMENT.md"
+        ],
+        "answer_points": [
+          "uvicorn src.main:app --reload --host 0.0.0.0 --port 8000",
+          "http://localhost:8000/docs"
+        ],
+        "category": "deployment",
+        "difficulty": "easy"
+      },
+      {
+        "id": "q019",
+        "query": "API 文档里如何区分官方 API 入口和兼容启动器？",
+        "relevant_docs": [
+          "API.md"
+        ],
+        "answer_points": [
+          "官方 API 入口：src.main:app",
+          "兼容启动器：根目录 main.py"
+        ],
+        "category": "api",
+        "difficulty": "easy"
+      },
+      {
+        "id": "q020",
+        "query": "Memory 在当前项目定位里应该怎么讲？",
+        "relevant_docs": [
+          "API.md",
+          "README.md"
+        ],
+        "answer_points": [
+          "扩展能力",
+          "不是首页主打卖点",
+          "多轮对话场景探索模块"
+        ],
+        "category": "scope",
+        "difficulty": "medium"
+      },
+      {
+        "id": "q021",
+        "query": "当前评估体系应该至少覆盖哪些指标？",
+        "relevant_docs": [
+          "ARCHITECTURE.md",
+          "docs/REPO_REFACTOR_PLAN.md",
+          "docs/EVAL_PLAN.md"
+        ],
+        "answer_points": [
+          "Recall@K",
+          "MRR",
+          "NDCG",
+          "latency",
+          "bad case 分析"
+        ],
+        "category": "evaluation",
+        "difficulty": "medium"
+      },
+      {
+        "id": "q022",
+        "query": "为什么在 RAG 优化过程中需要建立基线（Baseline）并进行消融实验（Ablation）？",
+        "relevant_docs": [
+          "docs/EVAL_PLAN.md",
+          "docs/PROJECT_REVIEW.md"
+        ],
+        "answer_points": [
+          "可复现",
+          "可归因",
+          "可 defend"
+        ],
+        "category": "evaluation",
+        "difficulty": "medium"
+      },
+      {
+        "id": "q023",
+        "query": "在当前的初步测试阶段，哪些指标仍需进一步的真实业务数据校验？",
+        "relevant_docs": [
+          "docs/PROJECT_REVIEW.md",
+          "docs/EVAL_PLAN.md"
+        ],
+        "answer_points": [
+          "sample benchmark",
+          "mock fallback experiment",
+          "未经真实标注集验证的效果数字"
+        ],
+        "category": "evaluation",
+        "difficulty": "hard"
+      },
+      {
+        "id": "q024",
+        "query": "在评估 RAG 系统时，哪些指标能最真实地反映系统性能与检索质量？",
+        "relevant_docs": [
+          "docs/PROJECT_REVIEW.md",
+          "docs/EVAL_PLAN.md"
+        ],
+        "answer_points": [
+          "真实可检查数据集",
+          "清晰 baseline",
+          "可复现脚本",
+          "trade-off 可解释"
+        ],
+        "category": "evaluation",
+        "difficulty": "hard"
+      },
+      {
+        "id": "q025",
+        "query": "当前最值得优先做的评测实验是哪三组？",
+        "relevant_docs": [
+          "docs/EVAL_PLAN.md",
+          "docs/PROJECT_REVIEW.md"
+        ],
+        "answer_points": [
+          "fixed chunk vs parent-child",
+          "dense-only vs hybrid",
+          "no rewrite vs query rewrite"
+        ],
+        "category": "evaluation",
+        "difficulty": "medium"
+      },
+      {
+        "id": "q026",
+        "query": "这个项目当前为什么保留 legacy 目录而不是一次性全部删掉？",
+        "relevant_docs": [
+          "docs/STRUCTURE_GUIDE.md"
+        ],
+        "answer_points": [
+          "避免一次性大改导致导入/示例/测试断裂",
+          "保留历史实现方便渐进迁移"
+        ],
+        "category": "structure",
+        "difficulty": "medium"
+      },
+      {
+        "id": "q027",
+        "query": "该项目在模块化架构与检索优化方面的核心竞争力是什么？",
+        "relevant_docs": [
+          "docs/PROJECT_REVIEW.md",
+          "README.md"
+        ],
+        "answer_points": [
+          "模块化 RAG 主链路清晰",
+          "工程叙事收束完成",
+          "具备进一步做真实评测的基础"
+        ],
+        "category": "positioning",
+        "difficulty": "hard"
+      },
+      {
+        "id": "q028",
+        "query": "这个项目接下来最关键的里程碑是什么？",
+        "relevant_docs": [
+          "docs/PROJECT_REVIEW.md",
+          "docs/EVAL_PLAN.md",
+          "docs/ROADMAP.md"
+        ],
+        "answer_points": [
+          "真实标注评测集",
+          "可复现 ablation 结果",
+          "EVAL_REPORT"
+        ],
+        "category": "roadmap",
+        "difficulty": "medium"
+      },
+      {
+        "id": "q029",
+        "query": "如何从系统演进角度解释检索（Retrieval）、改写（Rewrite）与重排（Rerank）模块的设计动机？",
+        "relevant_docs": [
+          "README.md",
+          "ARCHITECTURE.md",
+          "docs/PROJECT_REVIEW.md"
+        ],
+        "answer_points": [
+          "直接体现检索质量优化思路",
+          "能讲 trade-off",
+          "能结合工程落地"
+        ],
+        "category": "positioning",
+        "difficulty": "medium"
+      },
+      {
+        "id": "q030",
+        "query": "这个项目现在最不应该继续优先投入的方向有哪些？",
+        "relevant_docs": [
+          "docs/ROADMAP.md",
+          "README.md",
+          "docs/PROJECT_REVIEW.md"
+        ],
+        "answer_points": [
+          "多租户",
+          "RBAC",
+          "hot reload",
+          "workflow",
+          "agent 扩展"
+        ],
+        "category": "roadmap",
+        "difficulty": "hard"
+      }
+    ],
+    "stability_summary": {
+      "runs": 3,
+      "min_recall@20": 0.8888888888888888,
+      "max_recall@20": 0.8888888888888888,
+      "avg_recall@20": 0.8888888888888888,
+      "min_precision@3": 0.5111111111111111,
+      "max_precision@3": 0.5111111111111111,
+      "avg_precision@3": 0.5111111111111111,
+      "min_mrr": 0.7864285714285714,
+      "max_mrr": 0.7864285714285714,
+      "avg_mrr": 0.7864285714285714,
+      "min_map": 0.7070899470899471,
+      "max_map": 0.7070899470899471,
+      "avg_map": 0.7070899470899471,
+      "min_faithfulness": 1.0,
+      "max_faithfulness": 1.0,
+      "avg_faithfulness": 1.0,
+      "min_relevance": 0.10833333333333334,
+      "max_relevance": 0.10833333333333334,
+      "avg_relevance": 0.10833333333333334,
+      "min_hallucination": 0.0030303030303030303,
+      "max_hallucination": 0.0030303030303030303,
+      "avg_hallucination": 0.0030303030303030303,
+      "avg_latency_ms": 338.63584465450714,
+      "avg_support_confidence": 0.8500000000000002,
+      "max_badcases": 0
+    }
+  },
+  "retrieval": {
+    "recall@20": 0.8888888888888888,
+    "precision@3": 0.5111111111111111,
+    "ndcg@10": 0.778565718132972,
+    "mrr": 0.7864285714285714,
+    "map": 0.7070899470899471
+  },
+  "generation": {
+    "avg_faithfulness": 1.0,
+    "avg_relevance": 0.10833333333333334,
+    "avg_hallucination": 0.0030303030303030303
+  },
+  "performance": {
+    "avg_latency_ms": 336.03867689768475,
+    "p99_latency_ms": 537.2022891044617,
+    "p95_latency_ms": 521.0526823997498,
+    "avg_support_confidence": 0.8500000000000002,
+    "fallback_rate": 0.0
+  },
+  "details": {
+    "num_queries": 30,
+    "generation_metrics_per_query": [
+      {
+        "query": "这个项目的官方 API 入口是什么？",
+        "faithfulness": 1.0,
+        "relevance": 0.3333333333333333,
+        "hallucination": 0.0,
+        "support_confidence": 0.85,
+        "has_support": true,
+        "sources_count": 10
+      },
+      {
+        "query": "根目录 main.py 在当前仓库里扮演什么角色？",
+        "faithfulness": 1.0,
+        "relevance": 0.0,
+        "hallucination": 0.0,
+        "support_confidence": 0.85,
+        "has_support": true,
+        "sources_count": 10
+      },
+      {
+        "query": "这个项目当前主打的 RAG 主链路包含哪些阶段？",
+        "faithfulness": 1.0,
+        "relevance": 0.0,
+        "hallucination": 0.0,
+        "support_confidence": 0.85,
+        "has_support": true,
+        "sources_count": 10
+      },
+      {
+        "query": "为什么这个项目不把自己定义成泛企业级平台？",
+        "faithfulness": 1.0,
+        "relevance": 0.0,
+        "hallucination": 0.0,
+        "support_confidence": 0.85,
+        "has_support": true,
+        "sources_count": 10
+      },
+      {
+        "query": "Parent-Child Chunking 在这个项目里要解决什么问题？",
+        "faithfulness": 1.0,
+        "relevance": 0.6666666666666666,
+        "hallucination": 0.0,
+        "support_confidence": 0.85,
+        "has_support": true,
+        "sources_count": 10
+      },
+      {
+        "query": "Hybrid Retrieval 在这个项目里的作用是什么？",
+        "faithfulness": 1.0,
+        "relevance": 0.0,
+        "hallucination": 0.0,
+        "support_confidence": 0.85,
+        "has_support": true,
+        "sources_count": 10
+      },
+      {
+        "query": "Query Rewrite 的设计动机是什么？",
+        "faithfulness": 1.0,
+        "relevance": 0.6666666666666666,
+        "hallucination": 0.0,
+        "support_confidence": 0.85,
+        "has_support": true,
+        "sources_count": 10
+      },
+      {
+        "query": "Reranking 在当前主链路中的职责是什么？",
+        "faithfulness": 1.0,
+        "relevance": 0.0,
+        "hallucination": 0.0,
+        "support_confidence": 0.85,
+        "has_support": true,
+        "sources_count": 10
+      },
+      {
+        "query": "项目中哪些模块被定义为实验性（Experimental）或可选（Optional）？",
+        "faithfulness": 1.0,
+        "relevance": 0.0,
+        "hallucination": 0.0,
+        "support_confidence": 0.85,
+        "has_support": true,
+        "sources_count": 10
+      },
+      {
+        "query": "为什么建议将实验性模块与核心实现路径分开说明？",
+        "faithfulness": 1.0,
+        "relevance": 0.0,
+        "hallucination": 0.0,
+        "support_confidence": 0.85,
+        "has_support": true,
+        "sources_count": 8
+      },
+      {
+        "query": "当前仓库建议按哪些 canonical 路径来理解主结构？",
+        "faithfulness": 1.0,
+        "relevance": 0.0,
+        "hallucination": 0.0,
+        "support_confidence": 0.85,
+        "has_support": true,
+        "sources_count": 8
+      },
+      {
+        "query": "为什么 src/document/ 不建议继续作为主线理解？",
+        "faithfulness": 1.0,
+        "relevance": 0.0,
+        "hallucination": 0.0,
+        "support_confidence": 0.85,
+        "has_support": true,
+        "sources_count": 9
+      },
+      {
+        "query": "为什么 src/vector/ 和 src/vector_store/ 需要进一步收束？",
+        "faithfulness": 1.0,
+        "relevance": 0.0,
+        "hallucination": 0.0,
+        "support_confidence": 0.85,
+        "has_support": true,
+        "sources_count": 9
+      },
+      {
+        "query": "如何准确概括该项目的核心技术路线与模块化设计？",
+        "faithfulness": 1.0,
+        "relevance": 0.0,
+        "hallucination": 0.0,
+        "support_confidence": 0.85,
+        "has_support": true,
+        "sources_count": 8
+      },
+      {
+        "query": "当前版本明确不追求什么？",
+        "faithfulness": 1.0,
+        "relevance": 0.0,
+        "hallucination": 0.0,
+        "support_confidence": 0.85,
+        "has_support": true,
+        "sources_count": 10
+      },
+      {
+        "query": "该项目如何体现 AI 应用工程化与检索质量优化的结合？",
+        "faithfulness": 1.0,
+        "relevance": 0.3333333333333333,
+        "hallucination": 0.0,
+        "support_confidence": 0.85,
+        "has_support": true,
+        "sources_count": 10
+      },
+      {
+        "query": "在该项目中，推荐的端到端检索增强生成演示路径包含哪些环节？",
+        "faithfulness": 1.0,
+        "relevance": 0.0,
+        "hallucination": 0.0,
+        "support_confidence": 0.85,
+        "has_support": true,
+        "sources_count": 10
+      },
+      {
+        "query": "README 中推荐如何启动服务和查看 API 文档？",
+        "faithfulness": 1.0,
+        "relevance": 0.25,
+        "hallucination": 0.0,
+        "support_confidence": 0.85,
+        "has_support": true,
+        "sources_count": 10
+      },
+      {
+        "query": "API 文档里如何区分官方 API 入口和兼容启动器？",
+        "faithfulness": 1.0,
+        "relevance": 0.3333333333333333,
+        "hallucination": 0.0,
+        "support_confidence": 0.85,
+        "has_support": true,
+        "sources_count": 10
+      },
+      {
+        "query": "Memory 在当前项目定位里应该怎么讲？",
+        "faithfulness": 1.0,
+        "relevance": 0.0,
+        "hallucination": 0.0,
+        "support_confidence": 0.85,
+        "has_support": true,
+        "sources_count": 10
+      },
+      {
+        "query": "当前评估体系应该至少覆盖哪些指标？",
+        "faithfulness": 1.0,
+        "relevance": 0.0,
+        "hallucination": 0.0,
+        "support_confidence": 0.85,
+        "has_support": true,
+        "sources_count": 8
+      },
+      {
+        "query": "为什么在 RAG 优化过程中需要建立基线（Baseline）并进行消融实验（Ablation）？",
+        "faithfulness": 1.0,
+        "relevance": 0.3333333333333333,
+        "hallucination": 0.0,
+        "support_confidence": 0.85,
+        "has_support": true,
+        "sources_count": 10
+      },
+      {
+        "query": "在当前的初步测试阶段，哪些指标仍需进一步的真实业务数据校验？",
+        "faithfulness": 1.0,
+        "relevance": 0.0,
+        "hallucination": 0.0,
+        "support_confidence": 0.85,
+        "has_support": true,
+        "sources_count": 8
+      },
+      {
+        "query": "在评估 RAG 系统时，哪些指标能最真实地反映系统性能与检索质量？",
+        "faithfulness": 1.0,
+        "relevance": 0.0,
+        "hallucination": 0.0,
+        "support_confidence": 0.85,
+        "has_support": true,
+        "sources_count": 10
+      },
+      {
+        "query": "当前最值得优先做的评测实验是哪三组？",
+        "faithfulness": 1.0,
+        "relevance": 0.0,
+        "hallucination": 0.0,
+        "support_confidence": 0.85,
+        "has_support": true,
+        "sources_count": 8
+      },
+      {
+        "query": "这个项目当前为什么保留 legacy 目录而不是一次性全部删掉？",
+        "faithfulness": 1.0,
+        "relevance": 0.3333333333333333,
+        "hallucination": 0.0,
+        "support_confidence": 0.85,
+        "has_support": true,
+        "sources_count": 9
+      },
+      {
+        "query": "该项目在模块化架构与检索优化方面的核心竞争力是什么？",
+        "faithfulness": 1.0,
+        "relevance": 0.0,
+        "hallucination": 0.09090909090909091,
+        "support_confidence": 0.85,
+        "has_support": true,
+        "sources_count": 10
+      },
+      {
+        "query": "这个项目接下来最关键的里程碑是什么？",
+        "faithfulness": 1.0,
+        "relevance": 0.0,
+        "hallucination": 0.0,
+        "support_confidence": 0.85,
+        "has_support": true,
+        "sources_count": 8
+      },
+      {
+        "query": "如何从系统演进角度解释检索（Retrieval）、改写（Rewrite）与重排（Rerank）模块的设计动机？",
+        "faithfulness": 1.0,
+        "relevance": 0.0,
+        "hallucination": 0.0,
+        "support_confidence": 0.85,
+        "has_support": true,
+        "sources_count": 10
+      },
+      {
+        "query": "这个项目现在最不应该继续优先投入的方向有哪些？",
+        "faithfulness": 1.0,
+        "relevance": 0.0,
+        "hallucination": 0.0,
+        "support_confidence": 0.85,
+        "has_support": true,
+        "sources_count": 8
+      }
+    ],
+    "badcases": []
+  }
+}

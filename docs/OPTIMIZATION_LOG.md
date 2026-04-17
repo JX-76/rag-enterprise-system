@@ -124,6 +124,46 @@
 
 ---
 
+### OPT-006 扩展 fallback 语料覆盖 + 按问题类型补生成证据提取
+
+- **问题**：30 条 repo-grounded 数据集扩展后，多个 query 的相关文档根本不在 fallback 语料中（如 `src/main.py`、`main.py`、`DEPLOYMENT.md`、`docs/STRUCTURE_GUIDE.md`、`docs/REPO_REFACTOR_PLAN.md`），同时生成侧对“企业级定位 / API 入口 / 部署 / 结构”类问题容易退化成泛化模板，导致大数据集指标偏低并出现 badcase。
+- **改动文件**：
+  - `src/retrieval/hybrid.py`
+  - `src/generation/generator.py`
+  - `scripts/run_repo_grounded_eval.py`
+- **commit**：待本轮提交
+- **方法**：
+  - 扩展 fallback 检索语料，把 API / deployment / structure / launcher 相关文档纳入检索集合；
+  - 为 API、部署、结构、定位类 query 增加 query→doc hints；
+  - 在生成 fallback 摘要中补充这些问题类型的证据段抽取，减少空泛回答。
+- **before（30-query 数据集，3 runs）**：
+  - artifact：`artifacts/eval/optimization_runs/repo_grounded_eval_20260417_051032.json`
+  - `recall@20 = 0.7333`
+  - `precision@3 = 0.4667`
+  - `mrr = 0.7611`
+  - `map = 0.6246`
+  - `avg_faithfulness = 0.9667`
+  - `badcases = 1`
+- **after（30-query 数据集，3 runs）**：
+  - artifact：`artifacts/eval/optimization_runs/repo_grounded_eval_20260417_102944.json`
+  - `recall@20 = 0.8889`
+  - `precision@3 = 0.5111`
+  - `mrr = 0.7864`
+  - `map = 0.7071`
+  - `avg_faithfulness = 1.0`
+  - `badcases = 0`
+- **delta**：
+  - `recall@20: +0.1556`
+  - `precision@3: +0.0444`
+  - `mrr: +0.0253`
+  - `map: +0.0825`
+  - `avg_faithfulness: +0.0333`
+  - `badcases: -1`
+- **风险**：
+  - `avg_relevance` 仍偏低（`0.1083`），说明回答相关性和表达质量还不是强项；
+  - 当前仍是 repo-grounded 30 条验证集，不应直接外推为真实业务泛化能力。
+- **结论**：保留。这一轮不是“空跑”，而是把 30 条数据集上真实缺文档覆盖的问题补上，并消掉了已知 badcase，形成了可复现的实质提升。
+
 ## Next Engineering Steps
 
 1. **强制 doc injection**

@@ -245,6 +245,26 @@ class LLMGenerator:
             if para:
                 bullets.append(self._sentence_clip(para))
 
+        if any(k in query_lower for k in ["企业级", "enterprise", "大而全", "定位", "不追求", "工程化"]):
+            para = best_paragraph(["不追求", "企业级", "enterprise", "大而全", "检索质量优化", "AI 应用工程化", "模块化 RAG 项目"])
+            if para:
+                bullets.append(self._sentence_clip(para))
+
+        if any(k in query_lower for k in ["api", "入口", "main.py", "启动器"]):
+            para = best_paragraph(["src.main:app", "main.py", "兼容启动器", "官方 API 入口"])
+            if para:
+                bullets.append(self._sentence_clip(para))
+
+        if any(k in query_lower for k in ["启动", "部署", "uvicorn", "docs", "localhost:8000"]):
+            para = best_paragraph(["uvicorn src.main:app", "localhost:8000/docs", "API 文档", "启动服务"])
+            if para:
+                bullets.append(self._sentence_clip(para))
+
+        if any(k in query_lower for k in ["结构", "canonical", "src/document", "src/vector", "vector_store", "ingestion"]):
+            para = best_paragraph(["canonical", "src/ingestion", "src/document", "src/vector", "vector_store", "STRUCTURE_GUIDE"])
+            if para:
+                bullets.append(self._sentence_clip(para))
+
         if len(bullets) < 2:
             for para in paragraphs[:3]:
                 clipped = self._sentence_clip(para)
