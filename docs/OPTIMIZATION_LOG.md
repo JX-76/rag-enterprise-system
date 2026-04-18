@@ -246,6 +246,40 @@
   - 若 fallback 语料继续显著扩大，需要重新评估缓存大小和内存占用。
 - **结论**：**保留**。这是一次典型的“在不损失质量指标的前提下回收 latency”的工程化修复。
 
+### OPT-009 评测增强：category-level breakdown + per-query retrieval error analysis
+
+- **问题**：之前的评测输出只有全局均值（`precision@3` / `mrr` / `map` 等），缺少按 query 类别和单条样本的错误分析，导致后续优化虽然知道“分数还不够高”，但不知道究竟是 `evaluation` / `roadmap` / `structure` 哪类 query 在拖后腿，也无法量化 `README.md` 长文是否真的存在 top1 过强问题。
+- **改动文件**：
+  - `src/evaluation/metrics.py`
+- **commit**：待本轮提交
+- **方法**：
+  - 在 benchmark 产物中新增 `per_query_retrieval`，输出每条 query 的 `top1/top3/top10`、`top1_hit`、`precision@3`、`recall@20`、`mrr`、`ap`、漏召回文档和误命中文档；
+  - 新增 `category_breakdown`，按 `category` 聚合输出 retrieval / generation / latency 指标；
+  - 新增 `doc_dominance`，量化 `README.md` / `ARCHITECTURE.md` 在 top1 / top3 中的占比和错误 top1 比例；
+  - 保持主评测指标不变，只增强分析能力，确保可横向对比历史 artifact。
+- **before**：
+  - 历史 artifact 仅包含全局 retrieval / generation / performance 指标和 `badcases`，缺少按类别和单 query 错误分析视图。
+- **after（30-query 数据集，1 run）**：
+  - artifact：`artifacts/eval/optimization_runs/repo_grounded_eval_20260418_215033.json`
+  - 主指标保持不变：
+    - `recall@20 = 0.8889`
+    - `precision@3 = 0.5222`
+    - `mrr = 0.8206`
+    - `map = 0.7442`
+    - `avg_latency_ms = 153.85`
+  - 新增关键分析结论：
+    - `evaluation` 类 query 是当前最大短板：`precision@3 = 0.0667`、`recall@20 = 0.5333`、`top1_hit_rate = 0.0`
+    - `roadmap` 类也偏弱：`precision@3 = 0.3333`、`recall@20 = 0.5`
+    - `README.md` 在 30 条 query 中 `top1_count = 22`（`73.33%`），其中 `wrong_top1_count = 5`，确认存在长文 top1 过强问题
+    - `structure` 类存在排序问题：`top1_hit_rate = 0.75`
+- **delta**：
+  - 主指标：`+0.0000`（本轮目标不是涨分，而是增强下一轮优化的可归因性）
+  - 分析能力：显著增强，可直接支持下一轮“按 category 定向优化”
+- **风险 / 代价**：
+  - 增加 artifact 体积和评测结果复杂度；
+  - 仍然基于 30-query repo-grounded 验证集，分析结论不能直接外推为真实线上全量分布。
+- **结论**：**保留**。这轮虽然不涨主指标，但它把“下一轮该优化什么”从拍脑袋变成了有证据的工程决策。
+
 ## Next Engineering Steps
 
 1. **强制 doc injection**

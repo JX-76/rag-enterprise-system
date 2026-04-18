@@ -207,6 +207,131 @@ class BenchmarkRunner:
         weight = position - lower
         return sorted_values[lower] * (1 - weight) + sorted_values[upper] * weight
 
+    @staticmethod
+    def _dedup_source_ids(results: List[Dict[str, Any]]) -> List[str]:
+        deduped = []
+        seen = set()
+        for item in results:
+            doc_id = item.get("id")
+            if not doc_id or doc_id in seen:
+                continue
+            seen.add(doc_id)
+            deduped.append(doc_id)
+        return deduped
+
+    def _per_query_retrieval_detail(
+        self,
+        item: Dict[str, Any],
+        result: Dict[str, Any],
+        latency_ms: float,
+    ) -> Dict[str, Any]:
+        relevant_docs = set(item.get("relevant_docs", []))
+        retrieved_ids = self._dedup_source_ids(result.get("sources", []))
+        top3 = retrieved_ids[:3]
+        top10 = retrieved_ids[:10]
+        mrr = self.retrieval_evaluator._compute_mrr(retrieved_ids, relevant_docs)
+        ap = self.retrieval_evaluator._compute_ap(retrieved_ids, relevant_docs)
+        recall_at_20 = len(set(retrieved_ids[:20]) & relevant_docs) / len(relevant_docs) if relevant_docs else 0.0
+        precision_at_3 = len(set(top3) & relevant_docs) / 3 if top3 else 0.0
+        return {
+            "id": item.get("id", ""),
+            "query": item.get("query", ""),
+            "category": item.get("category", "uncategorized"),
+            "difficulty": item.get("difficulty", "unknown"),
+            "relevant_docs": list(item.get("relevant_docs", [])),
+            "retrieved_top3": top3,
+            "retrieved_top10": top10,
+            "top1": retrieved_ids[0] if retrieved_ids else None,
+            "top1_hit": bool(retrieved_ids and retrieved_ids[0] in relevant_docs),
+            "precision@3": precision_at_3,
+            "recall@20": recall_at_20,
+            "mrr": mrr,
+            "ap": ap,
+            "missed_relevant_docs": sorted(relevant_docs - set(retrieved_ids[:20])),
+            "unexpected_top3": [doc_id for doc_id in top3 if doc_id not in relevant_docs],
+            "latency_ms": latency_ms,
+            "sources_count": len(result.get("sources", [])),
+        }
+
+    def _build_category_breakdown(
+        self,
+        per_query_retrieval: List[Dict[str, Any]],
+        generation_metrics: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        by_category: Dict[str, Dict[str, List[float] | int]] = {}
+        generation_by_query = {item["query"]: item for item in generation_metrics}
+
+        for item in per_query_retrieval:
+            category = item.get("category", "uncategorized")
+            bucket = by_category.setdefault(
+                category,
+                {
+                    "count": 0,
+                    "precision@3": [],
+                    "recall@20": [],
+                    "mrr": [],
+                    "ap": [],
+                    "latency_ms": [],
+                    "top1_hit": 0,
+                    "faithfulness": [],
+                    "relevance": [],
+                    "hallucination": [],
+                },
+            )
+            bucket["count"] += 1
+            bucket["precision@3"].append(item["precision@3"])
+            bucket["recall@20"].append(item["recall@20"])
+            bucket["mrr"].append(item["mrr"])
+            bucket["ap"].append(item["ap"])
+            bucket["latency_ms"].append(item["latency_ms"])
+            bucket["top1_hit"] += 1 if item["top1_hit"] else 0
+
+            gen = generation_by_query.get(item["query"])
+            if gen:
+                bucket["faithfulness"].append(gen["faithfulness"])
+                bucket["relevance"].append(gen["relevance"])
+                bucket["hallucination"].append(gen["hallucination"])
+
+        return {
+            category: {
+                "count": bucket["count"],
+                "precision@3": self._safe_mean(bucket["precision@3"]),
+                "recall@20": self._safe_mean(bucket["recall@20"]),
+                "mrr": self._safe_mean(bucket["mrr"]),
+                "map": self._safe_mean(bucket["ap"]),
+                "avg_latency_ms": self._safe_mean(bucket["latency_ms"]),
+                "top1_hit_rate": (bucket["top1_hit"] / bucket["count"]) if bucket["count"] else 0.0,
+                "avg_faithfulness": self._safe_mean(bucket["faithfulness"]),
+                "avg_relevance": self._safe_mean(bucket["relevance"]),
+                "avg_hallucination": self._safe_mean(bucket["hallucination"]),
+            }
+            for category, bucket in by_category.items()
+        }
+
+    def _build_doc_dominance_stats(self, per_query_retrieval: List[Dict[str, Any]]) -> Dict[str, Any]:
+        tracked_docs = ["README.md", "ARCHITECTURE.md"]
+        total = len(per_query_retrieval)
+        stats: Dict[str, Any] = {}
+
+        for doc_id in tracked_docs:
+            top1_count = sum(1 for item in per_query_retrieval if item.get("top1") == doc_id)
+            top1_wrong = sum(
+                1
+                for item in per_query_retrieval
+                if item.get("top1") == doc_id and doc_id not in set(item.get("relevant_docs", []))
+            )
+            top3_count = sum(1 for item in per_query_retrieval if doc_id in item.get("retrieved_top3", []))
+            stats[doc_id] = {
+                "top1_count": top1_count,
+                "top1_rate": (top1_count / total) if total else 0.0,
+                "wrong_top1_count": top1_wrong,
+                "wrong_top1_rate": (top1_wrong / total) if total else 0.0,
+                "top3_count": top3_count,
+                "top3_rate": (top3_count / total) if total else 0.0,
+            }
+
+        return stats
+
     async def run_benchmark(
         self,
         test_dataset: List[Dict[str, Any]]
@@ -241,7 +366,8 @@ class BenchmarkRunner:
 
         generation_metrics = []
         badcases = []
-        for query, result in zip(queries, results):
+        for item, result in zip(test_dataset, results):
+            query = item["query"]
             contexts = [s["content"] for s in result["sources"]]
             answer = result["answer"]
 
@@ -251,7 +377,10 @@ class BenchmarkRunner:
             support = result.get("support", {})
 
             per_query = {
+                "id": item.get("id", ""),
                 "query": query,
+                "category": item.get("category", "uncategorized"),
+                "difficulty": item.get("difficulty", "unknown"),
                 "faithfulness": faithfulness,
                 "relevance": relevance,
                 "hallucination": hallucination,
@@ -273,7 +402,9 @@ class BenchmarkRunner:
             if reasons:
                 badcases.append(
                     {
+                        "id": item.get("id", ""),
                         "query": query,
+                        "category": item.get("category", "uncategorized"),
                         "reasons": reasons,
                         "support": support,
                         "route": result.get("route", {}),
@@ -281,6 +412,13 @@ class BenchmarkRunner:
                         "sources_count": len(result.get("sources", [])),
                     }
                 )
+
+        per_query_retrieval = [
+            self._per_query_retrieval_detail(item, result, latency_ms)
+            for item, result, latency_ms in zip(test_dataset, results, latencies)
+        ]
+        category_breakdown = self._build_category_breakdown(per_query_retrieval, generation_metrics)
+        doc_dominance = self._build_doc_dominance_stats(per_query_retrieval)
 
         warnings = []
         if len(queries) < 10:
@@ -316,6 +454,9 @@ class BenchmarkRunner:
             "details": {
                 "num_queries": len(queries),
                 "generation_metrics_per_query": generation_metrics,
+                "per_query_retrieval": per_query_retrieval,
+                "category_breakdown": category_breakdown,
+                "doc_dominance": doc_dominance,
                 "badcases": badcases,
             }
         }
