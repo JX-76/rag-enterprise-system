@@ -164,6 +164,88 @@
   - 当前仍是 repo-grounded 30 条验证集，不应直接外推为真实业务泛化能力。
 - **结论**：保留。这一轮不是“空跑”，而是把 30 条数据集上真实缺文档覆盖的问题补上，并消掉了已知 badcase，形成了可复现的实质提升。
 
+### OPT-007 段落级命中打分 + 路径特征加权（第二轮 fallback 排序修正）
+
+- **问题**：OPT-006 之后 30-query 数据集的 `recall@20` 已上来，但 `precision@3` / `mrr` / `map` 仍偏低，典型现象是 `README.md` 这类长文凭全文 token overlap 优势占前排，结构类/API 类 query 的更精确文档（如 `src/main.py`、`docs/STRUCTURE_GUIDE.md`、`docs/REPO_REFACTOR_PLAN.md`）虽然能召回，但排序不够稳定靠前。
+- **改动文件**：
+  - `src/retrieval/hybrid.py`
+- **commit**：待本轮提交
+- **方法**：
+  - 为 fallback 检索增加 **paragraph-level match score**，从“全文 token overlap”升级为“全文分数 + 段落最大命中分数”的组合，削弱长文天然优势；
+  - 增加 **path/title overlap score**，让 `src/main.py`、`docs/STRUCTURE_GUIDE.md` 这类路径强语义文档在 API / structure 类 query 下更容易排前；
+  - 增加轻量长度惩罚，避免超长文档仅因覆盖面大而稳定挤占前排；
+  - 保留已有 query→doc hint 机制，但适度下调 preferred doc bonus，避免 hint 过强直接“硬顶榜”。
+- **before（30-query 数据集，3 runs）**：
+  - artifact：`artifacts/eval/optimization_runs/repo_grounded_eval_20260418_164608.json`
+  - `recall@20 = 0.8889`
+  - `precision@3 = 0.5111`
+  - `mrr = 0.7864`
+  - `map = 0.7071`
+  - `avg_relevance = 0.1083`
+  - `avg_latency_ms = 334.52`
+  - `badcases = 0`
+- **after（30-query 数据集，3 runs）**：
+  - artifact：`artifacts/eval/optimization_runs/repo_grounded_eval_20260418_165259.json`
+  - `recall@20 = 0.8889`
+  - `precision@3 = 0.5222`
+  - `mrr = 0.8206`
+  - `map = 0.7442`
+  - `avg_relevance = 0.1139`
+  - `avg_latency_ms = 560.94`
+  - `badcases = 0`
+- **delta**：
+  - `recall@20: +0.0000`
+  - `precision@3: +0.0111`
+  - `mrr: +0.0341`
+  - `map: +0.0372`
+  - `avg_relevance: +0.0056`
+  - `avg_latency_ms: +226.42`
+- **风险 / 代价**：
+  - 这轮主要收益来自排序质量提升，不是召回扩大；
+  - 平均时延从 `334ms` 增加到 `561ms`，涨幅明显，说明 paragraph scoring 的代价不能忽略；
+  - 目前 top-1 仍有少量 query 被 `README.md` 压住，说明路径特征和文档类型先验还不够强。
+- **结论**：**暂保留**。这轮属于“排序质量真实提升，但代价偏大”的工程化优化，适合作为面试中的 trade-off 案例；若继续保留到主线，需要下一轮把 latency 打下来.
+
+### OPT-008 fallback 排序缓存化（降延迟修复）
+
+- **问题**：OPT-007 在 paragraph/path scoring 下把 `precision@3` / `mrr` / `map` 拉起来了，但平均时延从 `334.52ms` 上升到 `560.94ms`，代价过高，不适合作为默认主线。
+- **改动文件**：
+  - `src/retrieval/hybrid.py`
+- **commit**：待本轮提交
+- **方法**：
+  - 给 `_tokenize()` 增加 `lru_cache(maxsize=4096)`，避免同一文档/段落文本在多次 query 中反复分词；
+  - 给 `_paragraphs()` 增加 `lru_cache(maxsize=512)`，避免重复正则切段；
+  - 保持 OPT-007 的 paragraph/path scoring 逻辑不变，先只验证“通过缓存回收延迟”是否成立。
+- **before（30-query 数据集，3 runs）**：
+  - artifact：`artifacts/eval/optimization_runs/repo_grounded_eval_20260418_165259.json`
+  - `recall@20 = 0.8889`
+  - `precision@3 = 0.5222`
+  - `mrr = 0.8206`
+  - `map = 0.7442`
+  - `avg_relevance = 0.1139`
+  - `avg_latency_ms = 560.94`
+- **after（30-query 数据集，3 runs）**：
+  - artifact：`artifacts/eval/optimization_runs/repo_grounded_eval_20260418_193014.json`
+  - `recall@20 = 0.8889`
+  - `precision@3 = 0.5222`
+  - `mrr = 0.8206`
+  - `map = 0.7442`
+  - `avg_relevance = 0.1139`
+  - `avg_latency_ms = 154.04`
+- **delta**：
+  - `recall@20: +0.0000`
+  - `precision@3: +0.0000`
+  - `mrr: +0.0000`
+  - `map: +0.0000`
+  - `avg_relevance: +0.0000`
+  - `avg_latency_ms: -406.90`
+- **补充验证**：
+  - 5-query smoke test 平均时延约 `156.12ms`
+- **风险 / 代价**：
+  - 该优化依赖进程内缓存，对冷启动首次请求帮助有限；
+  - 若 fallback 语料继续显著扩大，需要重新评估缓存大小和内存占用。
+- **结论**：**保留**。这是一次典型的“在不损失质量指标的前提下回收 latency”的工程化修复。
+
 ## Next Engineering Steps
 
 1. **强制 doc injection**

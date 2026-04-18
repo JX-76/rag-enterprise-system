@@ -128,6 +128,7 @@ class RRFFusion:
         return fused_results
 
 
+@lru_cache(maxsize=4096)
 def _tokenize(text: str) -> List[str]:
     if not text:
         return []
@@ -222,6 +223,7 @@ def _load_fallback_corpus() -> List[Dict[str, str]]:
     return corpus
 
 
+@lru_cache(maxsize=512)
 def _paragraphs(text: str) -> List[str]:
     parts = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
     return [p for p in parts if len(p) > 20]
@@ -234,6 +236,36 @@ def _overlap_score(query_tokens: List[str], text: str) -> float:
     phrase_hits = sum(1 for token in query_tokens if len(token) >= 2 and token in text_lower)
     coverage = overlap / max(len(set(query_tokens)), 1)
     return coverage + phrase_hits * 0.06
+
+
+def _path_overlap_score(query_tokens: List[str], doc_id: str, title: str) -> float:
+    path_text = f"{doc_id} {title}".lower()
+    path_tokens = set(_tokenize(path_text))
+    token_hits = sum(1 for token in query_tokens if token in path_tokens)
+    phrase_hits = sum(1 for token in query_tokens if len(token) >= 2 and token in path_text)
+    return token_hits * 0.12 + phrase_hits * 0.03
+
+
+def _paragraph_match_score(query_tokens: List[str], text: str) -> float:
+    parts = _paragraphs(text)
+    if not parts:
+        return _overlap_score(query_tokens, text)
+
+    paragraph_scores = sorted(
+        (_overlap_score(query_tokens, part) for part in parts),
+        reverse=True,
+    )
+    best = paragraph_scores[0]
+    second = paragraph_scores[1] if len(paragraph_scores) > 1 else 0.0
+    return best * 0.75 + second * 0.25
+
+
+def _document_match_score(query_tokens: List[str], doc_id: str, title: str, text: str) -> float:
+    full_doc_score = _overlap_score(query_tokens, text)
+    paragraph_score = _paragraph_match_score(query_tokens, text)
+    path_score = _path_overlap_score(query_tokens, doc_id, title)
+    length_penalty = min(len(text) / 4000, 1.5) * 0.03
+    return full_doc_score * 0.35 + paragraph_score * 0.5 + path_score - length_penalty
 
 
 def _build_excerpt(text: str, query_tokens: List[str], max_chars: int = 900) -> str:
@@ -269,27 +301,34 @@ async def _fallback_repo_search(query: str, top_k: int, source: str) -> List[Ret
 
     for entry in _load_fallback_corpus():
         doc_text = entry["content"]
-        base_score = _overlap_score(query_tokens, doc_text)
+        doc_id = entry["id"]
+        title = entry["title"]
+        title_lower = title.lower()
+        base_score = _document_match_score(query_tokens, doc_id, title, doc_text)
         if base_score <= 0:
             continue
 
-        doc_id = entry["id"]
-        title = entry["title"].lower()
         score = base_score
 
         if source == "dense":
-            score = base_score * 1.05 + (0.08 if "architecture" in title or "readme" in title else 0.0)
+            score = base_score * 1.03 + (_paragraph_match_score(query_tokens, doc_text) * 0.05)
+            if "architecture" in title_lower or "readme" in title_lower:
+                score += 0.04
         elif source == "sparse":
-            score = base_score + sum(1 for token in query_tokens if token in title) * 0.15
+            score = base_score + _path_overlap_score(query_tokens, doc_id, title) * 0.6
         else:  # bm25
-            score = base_score + sum(1 for token in query_tokens if len(token) >= 2 and token in doc_text.lower()) * 0.02
+            score = base_score + sum(1 for token in query_tokens if len(token) >= 2 and token in doc_text.lower()) * 0.015
 
         if doc_id in preferred_docs:
-            score += 0.35
+            score += 0.28
         if "roadmap" in doc_id.lower() and any(k in query.lower() for k in ["fallback", "证据不足", "支持度"]):
             score += 0.12
         if "agent_harness_gap_analysis" in doc_id.lower() and any(k in query.lower() for k in ["trace", "execution", "结构化", "fallback", "证据不足"]):
             score += 0.18
+        if doc_id.lower().startswith("src/") and any(k in query.lower() for k in ["api", "入口", "src.main", "canonical", "structure", "vector_store", "ingestion"]):
+            score += 0.08
+        if doc_id.lower().startswith("docs/") and any(k in query.lower() for k in ["结构", "roadmap", "评估", "重构", "canonical", "不追求"]):
+            score += 0.08
 
         excerpt = _build_excerpt(doc_text, query_tokens)
         weighted_results.append(
@@ -298,7 +337,7 @@ async def _fallback_repo_search(query: str, top_k: int, source: str) -> List[Ret
                 content=excerpt,
                 score=float(score),
                 source=source,
-                metadata={"path": doc_id, "title": entry["title"]},
+                metadata={"path": doc_id, "title": title},
             )
         )
 
