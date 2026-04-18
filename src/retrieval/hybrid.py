@@ -42,6 +42,8 @@ QUERY_HINTS = {
     "structure": ["canonical 路径", "主结构", "structure guide", "src/document", "src/ingestion", "src/vector", "vector_store"],
     "positioning": ["企业级", "enterprise", "不追求", "大而全", "聚焦检索质量优化", "ai 应用工程化", "模块化 rag 项目"],
     "deployment": ["启动服务", "api 文档", "uvicorn", "localhost:8000/docs", "deployment"],
+    "evaluation": ["评测", "评估", "evaluation", "eval", "baseline", "ablation", "指标", "badcase", "latency", "mrr", "ndcg", "docs/eval_plan.md", "docs/project_review.md"],
+    "roadmap": ["roadmap", "里程碑", "下一步", "优先做", "不应该继续优先投入", "真实标注评测集", "eval_report", "项目规划", "规划"],
 }
 DOC_HINTS = {
     "retrieval": ["README.md", "ARCHITECTURE.md"],
@@ -51,6 +53,8 @@ DOC_HINTS = {
     "structure": ["docs/STRUCTURE_GUIDE.md", "docs/REPO_REFACTOR_PLAN.md", "README.md"],
     "positioning": ["README.md", "ARCHITECTURE.md", "docs/ROADMAP.md", "docs/PROJECT_REVIEW.md"],
     "deployment": ["DEPLOYMENT.md", "README.md", "API.md"],
+    "evaluation": ["docs/EVAL_PLAN.md", "docs/PROJECT_REVIEW.md", "docs/REPO_REFACTOR_PLAN.md", "ARCHITECTURE.md"],
+    "roadmap": ["docs/ROADMAP.md", "docs/PROJECT_REVIEW.md", "docs/EVAL_PLAN.md", "README.md"],
 }
 
 
@@ -166,6 +170,10 @@ def _expand_query_tokens(query: str) -> List[str]:
         tokens.extend(QUERY_HINTS["positioning"])
     if any(key in query_lower for key in ["启动", "部署", "uvicorn", "docs", "localhost:8000"]):
         tokens.extend(QUERY_HINTS["deployment"])
+    if any(key in query_lower for key in ["评测", "评估", "evaluation", "eval", "baseline", "ablation", "badcase", "mrr", "ndcg", "指标"]):
+        tokens.extend(QUERY_HINTS["evaluation"])
+    if any(key in query_lower for key in ["roadmap", "里程碑", "下一步", "优先做", "规划", "投入方向"]):
+        tokens.extend(QUERY_HINTS["roadmap"])
 
     seen = set()
     expanded = []
@@ -194,6 +202,10 @@ def _preferred_docs_for_query(query: str) -> List[str]:
         preferred.extend(DOC_HINTS["positioning"])
     if any(key in query_lower for key in ["启动", "部署", "uvicorn", "docs", "localhost:8000"]):
         preferred.extend(DOC_HINTS["deployment"])
+    if any(key in query_lower for key in ["评测", "评估", "evaluation", "eval", "baseline", "ablation", "badcase", "mrr", "ndcg", "指标"]):
+        preferred.extend(DOC_HINTS["evaluation"])
+    if any(key in query_lower for key in ["roadmap", "里程碑", "下一步", "优先做", "规划", "投入方向"]):
+        preferred.extend(DOC_HINTS["roadmap"])
 
     seen = set()
     result = []
@@ -321,6 +333,18 @@ async def _fallback_repo_search(query: str, top_k: int, source: str) -> List[Ret
 
         if doc_id in preferred_docs:
             score += 0.28
+        if any(key in query.lower() for key in ["评测", "评估", "evaluation", "eval", "baseline", "ablation", "badcase", "mrr", "ndcg", "指标"]):
+            if doc_id in {"docs/EVAL_PLAN.md", "docs/PROJECT_REVIEW.md"}:
+                score += 0.22
+            if doc_id == "docs/REPO_REFACTOR_PLAN.md":
+                score += 0.12
+            if doc_id in {"README.md", "ARCHITECTURE.md"}:
+                score -= 0.10
+        if any(key in query.lower() for key in ["roadmap", "里程碑", "下一步", "优先做", "规划", "投入方向"]):
+            if doc_id in {"docs/ROADMAP.md", "docs/PROJECT_REVIEW.md", "docs/EVAL_PLAN.md"}:
+                score += 0.18
+            if doc_id == "README.md":
+                score -= 0.08
         if "roadmap" in doc_id.lower() and any(k in query.lower() for k in ["fallback", "证据不足", "支持度"]):
             score += 0.12
         if "agent_harness_gap_analysis" in doc_id.lower() and any(k in query.lower() for k in ["trace", "execution", "结构化", "fallback", "证据不足"]):

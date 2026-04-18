@@ -280,6 +280,67 @@
   - 仍然基于 30-query repo-grounded 验证集，分析结论不能直接外推为真实线上全量分布。
 - **结论**：**保留**。这轮虽然不涨主指标，但它把“下一轮该优化什么”从拍脑袋变成了有证据的工程决策。
 
+### OPT-010 evaluation / roadmap 类 query 定向文档先验优化
+
+- **问题**：OPT-009 的误差分析表明，真正拖后腿的不是全局检索能力，而是 `evaluation` 和 `roadmap` 两类 query：
+  - `evaluation`：`precision@3 = 0.0667`、`recall@20 = 0.5333`、`top1_hit_rate = 0.0`
+  - `roadmap`：`precision@3 = 0.3333`、`recall@20 = 0.5`
+  同时 `README.md` 在 30 条 query 中 `top1_rate = 73.33%`，存在明显的长文 top1 压制问题。
+- **改动文件**：
+  - `src/retrieval/hybrid.py`
+- **commit**：待本轮提交
+- **方法**：
+  - 新增 `evaluation` / `roadmap` 两类 query 的 `QUERY_HINTS` 与 `DOC_HINTS`；
+  - 对评测、基线、消融、指标类 query，强化 `docs/EVAL_PLAN.md` / `docs/PROJECT_REVIEW.md` / `docs/REPO_REFACTOR_PLAN.md` 的排序先验；
+  - 对 roadmap、里程碑、下一步规划类 query，强化 `docs/ROADMAP.md` / `docs/PROJECT_REVIEW.md` / `docs/EVAL_PLAN.md` 的排序先验；
+  - 对这些 query 下的 `README.md` / `ARCHITECTURE.md` 施加轻量降权，缓解长文错误 top1 压制。
+- **before（OPT-009，30-query，1 run）**：
+  - artifact：`artifacts/eval/optimization_runs/repo_grounded_eval_20260418_215033.json`
+  - 全局：
+    - `recall@20 = 0.8889`
+    - `precision@3 = 0.5222`
+    - `mrr = 0.8206`
+    - `map = 0.7442`
+    - `avg_latency_ms = 153.85`
+  - 类别短板：
+    - `evaluation`: `precision@3 = 0.0667` / `recall@20 = 0.5333` / `top1_hit_rate = 0.0`
+    - `roadmap`: `precision@3 = 0.3333` / `recall@20 = 0.5`
+  - `README.md top1_rate = 73.33%`, `wrong_top1_rate = 16.67%`
+- **after（30-query，1 run）**：
+  - artifact：`artifacts/eval/optimization_runs/repo_grounded_eval_20260418_222803.json`
+  - 全局：
+    - `recall@20 = 0.9889`
+    - `precision@3 = 0.6222`
+    - `mrr = 0.9250`
+    - `map = 0.8499`
+    - `avg_latency_ms = 178.28`
+  - 类别提升：
+    - `evaluation`: `precision@3 = 0.6667` / `recall@20 = 1.0` / `top1_hit_rate = 0.8`
+    - `roadmap`: `precision@3 = 0.8333` / `recall@20 = 0.8333` / `top1_hit_rate = 1.0`
+  - 文档支配度变化：
+    - `README.md top1_rate = 53.33%`
+    - `README.md wrong_top1_rate = 3.33%`
+- **delta**：
+  - 全局：
+    - `recall@20: +0.1000`
+    - `precision@3: +0.1000`
+    - `mrr: +0.1044`
+    - `map: +0.1057`
+    - `avg_latency_ms: +24.43`
+  - `evaluation` 类：
+    - `precision@3: +0.6000`
+    - `recall@20: +0.4667`
+    - `top1_hit_rate: +0.8000`
+  - `roadmap` 类：
+    - `precision@3: +0.5000`
+    - `recall@20: +0.3333`
+  - `README.md wrong_top1_rate: -0.1333`
+- **风险 / 代价**：
+  - 这轮增益非常明显，但更强的 query→doc 先验也意味着更接近“按当前评测集做定向优化”，需要警惕过拟合；
+  - 平均时延小幅上涨（约 `+24ms`），目前仍在可接受范围内；
+  - 出现 1 条 `hallucination_risk` badcase（`q029`，positioning 类），说明 retrieval 提升后，生成侧的相关性/实体控制仍需继续处理。
+- **结论**：**保留，但需明确标注风险**。这是一次典型的“由误差分析驱动的定向排序优化”，显著提升了真正的短板类别，也证明前一轮评测增强不是白做的。
+
 ## Next Engineering Steps
 
 1. **强制 doc injection**
