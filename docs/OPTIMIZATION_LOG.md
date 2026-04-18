@@ -341,6 +341,26 @@
   - 出现 1 条 `hallucination_risk` badcase（`q029`，positioning 类），说明 retrieval 提升后，生成侧的相关性/实体控制仍需继续处理。
 - **结论**：**保留，但需明确标注风险**。这是一次典型的“由误差分析驱动的定向排序优化”，显著提升了真正的短板类别，也证明前一轮评测增强不是白做的。
 
+### OPT-011 冷启动 / 热启动 latency 特征补测
+
+- **问题**：OPT-008 通过缓存把平均时延从 `560ms` 拉回到 `154ms`，但当时还缺少“冷启动 vs 热启动”的补充说明，容易被质疑只是把问题藏进缓存命中里。
+- **改动文件**：
+  - `artifacts/eval/latency_cold_hot_20260418_2247.json`
+- **commit**：待本轮提交
+- **方法**：
+  - 选取 5 条代表性 query，分别测量“每次新建 `RAGEngine` 后首次查询”的 cold-start latency，以及“同一 `RAGEngine` warmup 后连续查询”的 hot-start latency；
+  - 保持当前 OPT-010 版本代码不变，只补充 latency 特征说明。
+- **结果**：
+  - artifact：`artifacts/eval/latency_cold_hot_20260418_2247.json`
+  - `cold_avg_ms = 133.61`
+  - `hot_avg_ms = 128.13`
+  - `delta_ms = 5.48`
+- **结论**：
+  - 在当前 fallback / cached scoring 主链路下，冷启动与热启动平均差异较小，说明进程内缓存已经回收了大部分可优化延迟；
+  - 当前最主要瓶颈已不是“首次请求冷启动”，而是特定类别 query 的检索/生成质量；
+  - 该结论**不适用于未来启用真正本地 embedding / reranker 的重模型冷加载场景**。
+- **类型**：性能特征补充 / trade-off 解释增强。
+
 ## Next Engineering Steps
 
 1. **强制 doc injection**
