@@ -95,8 +95,8 @@ clean:
 
 # 开发运行
 dev:
-	python -m uvicorn src.api.main:app --reload --host 0.0.0.0 --port 8000
+	python -m uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
 
 # 生产运行
 prod:
-	gunicorn src.api.main:app -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8000
+	gunicorn src.main:app -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8000

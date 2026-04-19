@@ -141,13 +141,14 @@ cython_debug/
 # VS Code
 .vscode/
 
-# Data
+# Data / runtime artifacts
 data/chroma/
 data/milvus/
 models/
 logs/
 experiments_resume/
 artifacts/ft/
+artifacts/eval/
 
 # OS
 .DS_Store
