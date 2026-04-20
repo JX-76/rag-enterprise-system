@@ -55,6 +55,13 @@
 >
 > 而不是“完整企业级 Agent 平台已经全部成熟”。
 
+### 仓库说明（避免误读）
+
+- **官方 API 入口**：`src.main:app`
+- **当前主展示路由**：`src/api/routes/health.py`、`retrieval.py`、`query.py`、`evaluation.py`
+- `src/api/routes.py` 为**早期单文件 demo 路由**，保留作参考，不作为当前对外主路径
+- `docs/archive/` 中的模板、实验草稿和历史整理文档仅作归档，不代表当前主卖点已全部完成
+
 ---
 
 ## 3. 主链路（推荐演示口径）

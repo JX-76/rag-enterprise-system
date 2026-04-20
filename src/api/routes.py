@@ -1,9 +1,13 @@
 """
-FastAPI路由 - 核心接口
-1. 文档上传
-2. 问答查询
-3. 文档列表
-4. 文档删除
+Legacy demo routes kept for reference.
+
+This module is **not** the canonical public API path.
+Current maintained entrypoint is `src.main:app` with route modules under `src/api/routes/`.
+
+Why this file still exists:
+1. preserve an earlier single-file demo implementation for comparison
+2. provide a lightweight reference for upload/list/delete flow ideas
+3. avoid presenting these handlers as the production-ready RAG main path
 """
 from typing import List, Optional
 from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks

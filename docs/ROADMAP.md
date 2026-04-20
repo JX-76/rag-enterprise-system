@@ -49,6 +49,8 @@
 - `src/memory/`
 - `src/workflow/`
 - `src/security/rbac.py`
+- `src/api/routes.py`（早期单文件 demo 路由）
+- `docs/archive/`（模板、实验草稿、历史整理记录）
 
 这些内容更适合作为：
 - 实验性探索
