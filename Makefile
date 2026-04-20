@@ -1,6 +1,9 @@
 # RAG Enterprise System - Makefile
 
-.PHONY: help install test lint format docker k8s clean
+PYTHON ?= python3
+PIP ?= $(PYTHON) -m pip
+
+.PHONY: help install test lint format docker k8s clean smoke eval-repo mvp-check
 
 # 默认目标
 help:
@@ -11,6 +14,9 @@ help:
 	@echo "  make test-cov    - 运行测试并生成覆盖率报告"
 	@echo "  make lint        - 代码检查"
 	@echo "  make format      - 代码格式化"
+	@echo "  make smoke       - 运行无服务 validation smoke"
+	@echo "  make eval-repo   - 运行 repo-grounded evaluation"
+	@echo "  make mvp-check   - 执行最小 MVP 自检路径"
 	@echo "  make docker      - 构建Docker镜像"
 	@echo "  make docker-run  - 运行Docker容器"
 	@echo "  make k8s-deploy  - 部署到Kubernetes"
@@ -20,18 +26,18 @@ help:
 
 # 安装依赖
 install:
-	pip install -r requirements.txt
+	$(PIP) install -r requirements.txt
 
 install-dev:
-	pip install -r requirements-full.txt
+	$(PIP) install -r requirements-full.txt
 	pre-commit install
 
 # 测试
 test:
-	python -m pytest tests/unit/ -v
+	$(PYTHON) -m pytest tests/unit/ -v
 
 test-cov:
-	python -m pytest tests/unit/ -v --cov=src --cov-report=html --cov-report=term
+	$(PYTHON) -m pytest tests/unit/ -v --cov=src --cov-report=html --cov-report=term
 
 # 代码质量
 lint:
@@ -46,6 +52,16 @@ format:
 format-check:
 	black --check src/ tests/
 	isort --check-only src/ tests/
+
+# Validation / Evaluation
+smoke:
+	$(PYTHON) scripts/run_validation_smoke.py
+
+eval-repo:
+	$(PYTHON) scripts/run_repo_grounded_eval.py
+
+mvp-check: smoke
+	@echo "MVP smoke path complete. Review artifacts under artifacts/eval/."
 
 # Docker
 docker:
@@ -95,7 +111,7 @@ clean:
 
 # 开发运行
 dev:
-	python -m uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
+	$(PYTHON) -m uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
 
 # 生产运行
 prod:
