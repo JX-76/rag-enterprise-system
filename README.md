@@ -291,21 +291,6 @@ curl -X POST http://127.0.0.1:8000/api/v1/eval/badcases \
 - 默认结果会落到 `artifacts/eval/`
 - 更适合拿来做调参、badcase 收敛和演示 review 闭环
 
----
-
-## 8. 推荐公开演示 / 面试叙事
-
-如果你要公开展示这个项目，建议按这条顺序讲：
-
-1. **先讲问题**：Naive RAG 为什么不够
-2. **再讲主链路**：routing -> rewrite -> retrieval -> rerank -> generate -> fallback -> trace
-3. **再讲工程化**：FastAPI、日志、指标、评测接口
-4. **最后讲边界**：哪些是 core，哪些是 experimental，哪些还在 roadmap
-
-推荐一句话版本：
-
-> 这是一个以 **retrieval quality + execution visibility + API delivery** 为主线的 modular RAG repo。
-> 重点不是炫技，而是把主链路做得足够清楚、可运行、可解释、可继续迭代。
 
 ---
 
